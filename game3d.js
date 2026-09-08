@@ -34,7 +34,8 @@ const state = {
   currentPosName: 'Basecamp Patakbanteng',
   isGameActive: false,
   activeInteractable: null,
-  completedCheckpoints: new Set(['Basecamp Gerbang Rimba'])
+  completedCheckpoints: new Set(['Basecamp Gerbang Rimba']),
+  equippedItem: 'pole'
 };
 
 const weatherNames = ['Golden Sunrise 🌅', 'Siang Sabana ⛅', 'Badai Hujan & Kabut 🌧️', 'Malam Bima Sakti 🌌'];
@@ -83,6 +84,12 @@ let webbingRopeGroup = null;
 let checkpoints = [], interactables = [];
 let trees = [], boulders = [], grassMeshes = [], flowers = [];
 let trekkingPoleGroup = null;
+let compassGroup = null, compassNeedle = null, compassDegreeText = null;
+let flashlightHandGroup = null, flashlightBeamMesh = null;
+let mapHandGroup = null, mapCanvas = null, mapCanvasCtx = null, mapCanvasTexture = null;
+let instancedGrassMesh = null, instancedEdelweissMesh = null;
+let grassInstanceData = [], edelweissInstanceData = [];
+let terrainNormalTexture = null, terrainRoughnessTexture = null;
 let rainParticles = null, rainGeo = null;
 
 // Audio System
@@ -203,6 +210,77 @@ function playBirdChirp() {
   } catch (e) {}
 }
 
+
+function playEquipSound() {
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    const now = audioCtx.currentTime;
+    osc.frequency.setValueAtTime(440, now);
+    osc.frequency.exponentialRampToValueAtTime(880, now + 0.09);
+    gain.gain.setValueAtTime(0.08, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + 0.09);
+  } catch (e) {}
+}
+
+function createProceduralTerrainTextures() {
+  if (terrainNormalTexture && terrainRoughnessTexture) return { normalTex: terrainNormalTexture, roughnessTex: terrainRoughnessTexture };
+
+  const nCanvas = document.createElement('canvas');
+  nCanvas.width = 512; nCanvas.height = 512;
+  const nCtx = nCanvas.getContext('2d');
+  const nImg = nCtx.createImageData(512, 512);
+  const nData = nImg.data;
+
+  const rCanvas = document.createElement('canvas');
+  rCanvas.width = 512; rCanvas.height = 512;
+  const rCtx = rCanvas.getContext('2d');
+  const rImg = rCtx.createImageData(512, 512);
+  const rData = rImg.data;
+
+  for (let y = 0; y < 512; y++) {
+    for (let x = 0; x < 512; x++) {
+      const idx = (y * 512 + x) * 4;
+      const nx = (Math.sin(x * 0.12) * Math.cos(y * 0.12) * 0.4 + Math.sin(x * 0.35 + y * 0.25) * 0.5) * 0.6;
+      const ny = (Math.cos(x * 0.12) * Math.sin(y * 0.12) * 0.4 + Math.cos(x * 0.25 + y * 0.35) * 0.5) * 0.6;
+      const nz = 1.0;
+      const len = Math.sqrt(nx*nx + ny*ny + nz*nz);
+      
+      nData[idx]     = Math.floor(((nx / len) * 0.5 + 0.5) * 255);
+      nData[idx + 1] = Math.floor(((ny / len) * 0.5 + 0.5) * 255);
+      nData[idx + 2] = Math.floor(((nz / len) * 0.5 + 0.5) * 255);
+      nData[idx + 3] = 255;
+
+      const rough = 0.78 + nx * 0.15 + ny * 0.15;
+      const rVal = Math.floor(Math.max(0.4, Math.min(0.95, rough)) * 255);
+      rData[idx]     = rVal;
+      rData[idx + 1] = rVal;
+      rData[idx + 2] = rVal;
+      rData[idx + 3] = 255;
+    }
+  }
+  nCtx.putImageData(nImg, 0, 0);
+  rCtx.putImageData(rImg, 0, 0);
+
+  terrainNormalTexture = new THREE.CanvasTexture(nCanvas);
+  terrainNormalTexture.wrapS = THREE.RepeatWrapping;
+  terrainNormalTexture.wrapT = THREE.RepeatWrapping;
+  terrainNormalTexture.repeat.set(36, 36);
+
+  terrainRoughnessTexture = new THREE.CanvasTexture(rCanvas);
+  terrainRoughnessTexture.wrapS = THREE.RepeatWrapping;
+  terrainRoughnessTexture.wrapT = THREE.RepeatWrapping;
+  terrainRoughnessTexture.repeat.set(36, 36);
+
+  return { normalTex: terrainNormalTexture, roughnessTex: terrainRoughnessTexture };
+}
+
 function playSummitFanfare() {
   if (!audioCtx || audioCtx.state !== 'running') return;
   const notes = [523.25, 659.25, 783.99, 1046.50];
@@ -232,7 +310,7 @@ function init3D() {
   scene = new THREE.Scene();
   const skyColor = new THREE.Color(0xfbcfe8); // Warm Golden Sunrise Rayleigh Gradient
   scene.background = skyColor;
-  scene.fog = new THREE.Fog(0xfbcfe8, 140, 1150);
+  scene.fog = new THREE.FogExp2(0xfbcfe8, 0.0016);
 
   const initialY = getTerrainHeight(0, 260) + player.height;
   player.position.set(0, initialY, 260);
@@ -247,7 +325,7 @@ function init3D() {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.25;
+  renderer.toneMappingExposure = 1.35;
 
   renderer.domElement.style.position = 'absolute';
   renderer.domElement.style.top = '0';
@@ -268,8 +346,10 @@ function init3D() {
   directionalLight = new THREE.DirectionalLight(0xffedd5, 1.6);
   directionalLight.position.set(240, 310, 200);
   directionalLight.castShadow = true;
-  directionalLight.shadow.mapSize.width = 1024;
-  directionalLight.shadow.mapSize.height = 1024;
+  directionalLight.shadow.mapSize.width = 2048;
+  directionalLight.shadow.mapSize.height = 2048;
+  directionalLight.shadow.bias = -0.0003;
+  directionalLight.shadow.radius = 2.0;
   directionalLight.shadow.camera.near = 10;
   directionalLight.shadow.camera.far = 900;
   directionalLight.shadow.camera.left = -300;
@@ -288,6 +368,9 @@ function init3D() {
   // Build Environment Systems
   buildCinematicSunAndSky();
   buildTrekkingPole();
+  buildHandheldCompass();
+  buildHandheldFlashlight();
+  buildHandheldMap();
   buildTerrain();
   buildSeaOfClouds();
   buildTrailRibbon();
@@ -433,11 +516,15 @@ function buildTerrain() {
   terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   terrainGeo.computeVertexNormals();
 
+  const { normalTex, roughnessTex } = createProceduralTerrainTextures();
   const terrainMat = new THREE.MeshStandardMaterial({
     vertexColors: true,
+    normalMap: normalTex,
+    normalScale: new THREE.Vector2(1.5, 1.5),
+    roughnessMap: roughnessTex,
     roughness: 0.85,
-    metalness: 0.12,
-    flatShading: true
+    metalness: 0.08,
+    flatShading: false
   });
 
   terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
@@ -460,6 +547,219 @@ function buildSeaOfClouds() {
   cloudMeshLayer1 = new THREE.Mesh(cloudGeo, cloudMat);
   cloudMeshLayer1.position.y = 28;
   scene.add(cloudMeshLayer1);
+}
+
+
+function buildHandheldCompass() {
+  if (compassGroup) camera.remove(compassGroup);
+  compassGroup = new THREE.Group();
+
+  const caseGeo = new THREE.CylinderGeometry(0.13, 0.13, 0.04, 24);
+  const caseMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.85, roughness: 0.25 });
+  const casing = new THREE.Mesh(caseGeo, caseMat);
+  compassGroup.add(casing);
+
+  const bezelGeo = new THREE.TorusGeometry(0.13, 0.012, 10, 24);
+  const bezelMat = new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.9, roughness: 0.2 });
+  const bezel = new THREE.Mesh(bezelGeo, bezelMat);
+  bezel.rotation.x = Math.PI / 2;
+  compassGroup.add(bezel);
+
+  const dialGeo = new THREE.CircleGeometry(0.12, 24);
+  dialGeo.rotateX(-Math.PI / 2);
+  const dialMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+  const dial = new THREE.Mesh(dialGeo, dialMat);
+  dial.position.y = 0.021;
+  compassGroup.add(dial);
+
+  const needleGroup = new THREE.Group();
+  needleGroup.position.y = 0.025;
+
+  const nConeGeo = new THREE.ConeGeometry(0.016, 0.09, 4);
+  nConeGeo.rotateX(Math.PI / 2);
+  const nMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+  const nCone = new THREE.Mesh(nConeGeo, nMat);
+  nCone.position.z = -0.045;
+  needleGroup.add(nCone);
+
+  const sConeGeo = new THREE.ConeGeometry(0.016, 0.09, 4);
+  sConeGeo.rotateX(-Math.PI / 2);
+  const sMat = new THREE.MeshBasicMaterial({ color: 0xf8fafc });
+  const sCone = new THREE.Mesh(sConeGeo, sMat);
+  sCone.position.z = 0.045;
+  needleGroup.add(sCone);
+
+  compassNeedle = needleGroup;
+  compassGroup.add(needleGroup);
+
+  const glassGeo = new THREE.CircleGeometry(0.125, 24);
+  glassGeo.rotateX(-Math.PI / 2);
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, roughness: 0.1 });
+  const glass = new THREE.Mesh(glassGeo, glassMat);
+  glass.position.y = 0.028;
+  compassGroup.add(glass);
+
+  compassGroup.position.set(0.26, -0.28, -0.48);
+  compassGroup.rotation.set(0.55, -0.15, -0.1);
+  camera.add(compassGroup);
+  compassGroup.visible = (state.equippedItem === 'compass');
+}
+
+function buildHandheldFlashlight() {
+  if (flashlightHandGroup) camera.remove(flashlightHandGroup);
+  flashlightHandGroup = new THREE.Group();
+
+  const bodyGeo = new THREE.CylinderGeometry(0.032, 0.035, 0.32, 16);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8, roughness: 0.3 });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.rotation.x = Math.PI / 2;
+  flashlightHandGroup.add(body);
+
+  const headGeo = new THREE.CylinderGeometry(0.052, 0.035, 0.08, 16);
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.9, roughness: 0.2 });
+  const head = new THREE.Mesh(headGeo, headMat);
+  head.rotation.x = Math.PI / 2;
+  head.position.z = -0.18;
+  flashlightHandGroup.add(head);
+
+  const lensGeo = new THREE.CircleGeometry(0.048, 16);
+  const lensMat = new THREE.MeshBasicMaterial({ color: 0xfffbeb });
+  const lens = new THREE.Mesh(lensGeo, lensMat);
+  lens.position.z = -0.221;
+  lens.rotation.y = Math.PI;
+  flashlightHandGroup.add(lens);
+
+  const coneGeo = new THREE.CylinderGeometry(0.05, 2.2, 16, 16, 1, true);
+  coneGeo.rotateX(-Math.PI / 2);
+  coneGeo.translate(0, 0, -8);
+  const coneMat = new THREE.MeshBasicMaterial({
+    color: 0xfffbeb,
+    transparent: true,
+    opacity: 0.12,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
+  flashlightBeamMesh = new THREE.Mesh(coneGeo, coneMat);
+  flashlightBeamMesh.visible = state.headlampOn;
+  flashlightHandGroup.add(flashlightBeamMesh);
+
+  flashlightHandGroup.position.set(0.32, -0.32, -0.55);
+  flashlightHandGroup.rotation.set(0.15, 0.05, -0.1);
+  camera.add(flashlightHandGroup);
+  flashlightHandGroup.visible = (state.equippedItem === 'flashlight');
+}
+
+function buildHandheldMap() {
+  if (mapHandGroup) camera.remove(mapHandGroup);
+  mapHandGroup = new THREE.Group();
+
+  const boardGeo = new THREE.BoxGeometry(0.44, 0.015, 0.34);
+  const boardMat = new THREE.MeshStandardMaterial({ color: 0x331e11, roughness: 0.85 });
+  const board = new THREE.Mesh(boardGeo, boardMat);
+  mapHandGroup.add(board);
+
+  const clipGeo = new THREE.BoxGeometry(0.12, 0.012, 0.04);
+  const clipMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.9, roughness: 0.2 });
+  const clip = new THREE.Mesh(clipGeo, clipMat);
+  clip.position.set(0, 0.01, -0.14);
+  mapHandGroup.add(clip);
+
+  if (!mapCanvas) {
+    mapCanvas = document.createElement('canvas');
+    mapCanvas.width = 256; mapCanvas.height = 256;
+    mapCanvasCtx = mapCanvas.getContext('2d');
+    mapCanvasTexture = new THREE.CanvasTexture(mapCanvas);
+  }
+  renderMapCanvasTexture();
+
+  const paperGeo = new THREE.PlaneGeometry(0.40, 0.30);
+  paperGeo.rotateX(-Math.PI / 2);
+  const paperMat = new THREE.MeshBasicMaterial({ map: mapCanvasTexture });
+  const paper = new THREE.Mesh(paperGeo, paperMat);
+  paper.position.y = 0.009;
+  mapHandGroup.add(paper);
+
+  mapHandGroup.position.set(0.0, -0.32, -0.46);
+  mapHandGroup.rotation.set(0.72, 0.0, 0.0);
+  camera.add(mapHandGroup);
+  mapHandGroup.visible = (state.equippedItem === 'map');
+}
+
+function renderMapCanvasTexture() {
+  if (!mapCanvasCtx) return;
+  const ctx = mapCanvasCtx;
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(0, 0, 256, 256);
+
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 256; i += 32) {
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 256); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(256, i); ctx.stroke();
+  }
+
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth = 2;
+  [110, 85, 60, 35, 15].forEach(r => {
+    ctx.beginPath();
+    ctx.arc(128, 128, r, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+
+  ctx.strokeStyle = '#10b981';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(128, 240);
+  ctx.lineTo(110, 190);
+  ctx.lineTo(145, 140);
+  ctx.lineTo(120, 80);
+  ctx.lineTo(128, 40);
+  ctx.stroke();
+
+  ctx.fillStyle = '#facc15';
+  ctx.font = 'bold 16px sans-serif';
+  ctx.fillText('⭐ Puncak', 105, 32);
+
+  if (player && player.position) {
+    const px = 128 + (player.position.x / (TERRAIN_SIZE * 0.5)) * 110;
+    const py = 128 + (player.position.z / (TERRAIN_SIZE * 0.5)) * 110;
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(px, py, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText('ANDA', px + 8, py + 3);
+  }
+
+  if (mapCanvasTexture) mapCanvasTexture.needsUpdate = true;
+}
+
+function equipItem(itemType) {
+  state.equippedItem = itemType;
+
+  if (trekkingPoleGroup) trekkingPoleGroup.visible = (itemType === 'pole');
+  if (compassGroup) compassGroup.visible = (itemType === 'compass');
+  if (flashlightHandGroup) flashlightHandGroup.visible = (itemType === 'flashlight');
+  if (mapHandGroup) mapHandGroup.visible = (itemType === 'map');
+
+  const equipBtns = document.querySelectorAll('.equip-btn');
+  equipBtns.forEach(btn => btn.classList.remove('active'));
+  const activeBtn = document.getElementById(`btn-equip-${itemType}`);
+  if (activeBtn) activeBtn.classList.add('active');
+
+  const itemNames = {
+    pole: '🦯 Tongkat Pendaki (Trekking Pole)',
+    compass: '🧭 Kompas Taktikal (Compass)',
+    flashlight: '🔦 Senter Tangan (Flashlight)',
+    map: '🗺️ Peta Kontur & GPX (Map Board)'
+  };
+  showNotification(`Peralatan Aktif: ${itemNames[itemType] || itemType}`);
+  playEquipSound();
 }
 
 function buildTrekkingPole() {
@@ -575,20 +875,15 @@ function buildTrailRibbon() {
 function buildFoliageAndSwayingGrass() {
   trees.forEach(t => scene.remove(t));
   boulders.forEach(b => scene.remove(b));
-  grassMeshes.forEach(g => scene.remove(g));
-  flowers.forEach(f => scene.remove(f));
-  trees = [];
-  boulders = [];
-  grassMeshes = [];
-  flowers = [];
+  if (instancedGrassMesh) scene.remove(instancedGrassMesh);
+  if (instancedEdelweissMesh) scene.remove(instancedEdelweissMesh);
+  trees = []; boulders = []; grassInstanceData = []; edelweissInstanceData = [];
 
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3e2723 });
-  const leafMat = new THREE.MeshStandardMaterial({ color: 0x155e27 });
-  const rockMat = new THREE.MeshStandardMaterial({ color: 0x64748b, flatShading: true });
-  const grassMat = new THREE.MeshStandardMaterial({ color: 0xa3e635, roughness: 0.8, side: THREE.DoubleSide });
-  const edelweissMat = new THREE.MeshStandardMaterial({ color: 0xfef08a });
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x155e27, roughness: 0.6 });
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x64748b, flatShading: true, roughness: 0.9 });
 
-  // Pine Trees
+  // Pine Trees (160)
   for (let i = 0; i < 160; i++) {
     const x = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.7);
     const z = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.7);
@@ -597,72 +892,98 @@ function buildFoliageAndSwayingGrass() {
     if (y > 6 && y < 95 && (Math.abs(x) > 6 || z > 200 || z < -100)) {
       const tree = new THREE.Group();
       const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.45, 4.0, 5), trunkMat);
-      trunk.position.y = 2.0;
-      trunk.castShadow = true;
-      tree.add(trunk);
-
+      trunk.position.y = 2.0; trunk.castShadow = true; tree.add(trunk);
       const f1 = new THREE.Mesh(new THREE.ConeGeometry(2.4, 5.0, 5), leafMat);
-      f1.position.y = 4.8;
-      f1.castShadow = true;
-      tree.add(f1);
-
+      f1.position.y = 4.8; f1.castShadow = true; tree.add(f1);
       tree.position.set(x, y, z);
-      scene.add(tree);
-      trees.push(tree);
+      scene.add(tree); trees.push(tree);
     }
   }
 
-  // Savanna Grass
-  const grassPlaneGeo = new THREE.PlaneGeometry(1.2, 1.4);
-  for (let i = 0; i < 90; i++) {
-    const x = (Math.random() - 0.5) * 190;
-    const z = -40 + (Math.random() - 0.5) * 150;
+  // GPU Instanced Savanna Grass (1,800 instances)
+  const grassBladeGeo = new THREE.PlaneGeometry(0.8, 1.6);
+  grassBladeGeo.translate(0, 0.8, 0);
+  const grassMat = new THREE.MeshStandardMaterial({
+    color: 0xa3e635,
+    roughness: 0.7,
+    side: THREE.DoubleSide
+  });
+
+  const grassCount = 1800;
+  instancedGrassMesh = new THREE.InstancedMesh(grassBladeGeo, grassMat, grassCount);
+  const dummy = new THREE.Object3D();
+
+  for (let i = 0; i < grassCount; i++) {
+    const x = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.85);
+    const z = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.85);
     const y = getTerrainHeight(x, z);
+    const rotY = Math.random() * Math.PI * 2;
+    const scaleX = 0.7 + Math.random() * 0.6;
+    const scaleY = 0.8 + Math.random() * 0.8;
+    const scaleZ = scaleX;
 
-    if (y > 35 && y < 110) {
-      const grass = new THREE.Mesh(grassPlaneGeo, grassMat);
-      grass.position.set(x, y + 0.7, z);
-      grass.rotation.y = Math.random() * Math.PI;
-      scene.add(grass);
-      grassMeshes.push(grass);
+    dummy.position.set(x, y, z);
+    dummy.rotation.set(0, rotY, 0);
+    dummy.scale.set(scaleX, scaleY, scaleZ);
+    dummy.updateMatrix();
+
+    instancedGrassMesh.setMatrixAt(i, dummy.matrix);
+    grassInstanceData.push({ x, y, z, rotY, scaleX, scaleY, scaleZ });
+  }
+  instancedGrassMesh.instanceMatrix.needsUpdate = true;
+  scene.add(instancedGrassMesh);
+
+  // GPU Instanced Edelweiss Flowers (300 instances at summit / high sabana)
+  const edelweissGeo = new THREE.DodecahedronGeometry(0.35, 0);
+  const edelweissMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, roughness: 0.5 });
+  const edelCount = 300;
+  instancedEdelweissMesh = new THREE.InstancedMesh(edelweissGeo, edelweissMat, edelCount);
+
+  for (let i = 0; i < edelCount; i++) {
+    const x = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.6);
+    const z = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.6);
+    const y = getTerrainHeight(x, z);
+    if (y > 45) {
+      dummy.position.set(x, y + 0.35, z);
+      dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      instancedEdelweissMesh.setMatrixAt(i, dummy.matrix);
     }
   }
+  instancedEdelweissMesh.instanceMatrix.needsUpdate = true;
+  scene.add(instancedEdelweissMesh);
 
-  // Boulders
+  // Boulders (60)
   for (let i = 0; i < 60; i++) {
     const x = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.65);
     const z = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.65);
     const y = getTerrainHeight(x, z);
-
     if (y > 25) {
       const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(1.2, 0), rockMat);
       rock.position.set(x, y + 0.4, z);
       rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
-      scene.add(rock);
-      boulders.push(rock);
-    }
-  }
-
-  // Edelweiss
-  for (let i = 0; i < 60; i++) {
-    const x = (Math.random() - 0.5) * 180;
-    const z = -120 + (Math.random() - 0.5) * 120;
-    const y = getTerrainHeight(x, z);
-
-    if (y > 75) {
-      const flower = new THREE.Mesh(new THREE.DodecahedronGeometry(0.4), edelweissMat);
-      flower.position.set(x, y + 0.3, z);
-      scene.add(flower);
-      flowers.push(flower);
+      scene.add(rock); boulders.push(rock);
     }
   }
 }
 
 function updateSwayingGrass(time) {
-  for (let i = 0; i < grassMeshes.length; i++) {
-    const g = grassMeshes[i];
-    g.rotation.z = Math.sin(time * 3.5 + i) * 0.14;
+  if (!instancedGrassMesh || grassInstanceData.length === 0) return;
+  const dummy = new THREE.Object3D();
+  const windSpeed = state.weatherMode === 2 ? 6.0 : 3.0;
+  const windAmp = state.weatherMode === 2 ? 0.25 : 0.12;
+
+  for (let i = 0; i < grassInstanceData.length; i++) {
+    const d = grassInstanceData[i];
+    const swayZ = Math.sin(time * windSpeed + d.x * 0.08 + d.z * 0.08) * windAmp;
+    dummy.position.set(d.x, d.y, d.z);
+    dummy.rotation.set(0, d.rotY, swayZ);
+    dummy.scale.set(d.scaleX, d.scaleY, d.scaleZ);
+    dummy.updateMatrix();
+    instancedGrassMesh.setMatrixAt(i, dummy.matrix);
   }
+  instancedGrassMesh.instanceMatrix.needsUpdate = true;
 }
 
 function buildWebbingClimbingZone() {
@@ -1123,6 +1444,10 @@ function updateRain(delta) {
 function setupControls() {
   document.addEventListener('keydown', (e) => {
     if (e.code in keys) keys[e.code] = true;
+    if (e.code === 'Digit1' || e.code === 'Key1') equipItem('pole');
+    if (e.code === 'Digit2' || e.code === 'Key2') equipItem('compass');
+    if (e.code === 'Digit3' || e.code === 'Key3') equipItem('flashlight');
+    if (e.code === 'Digit4' || e.code === 'Key4') equipItem('map');
     if (e.code === 'KeyF') toggleHeadlamp();
     if (e.code === 'KeyC') toggleTent();
     if (e.code === 'KeyL') toggleLogbook();
@@ -1241,10 +1566,32 @@ function updatePlayer(delta) {
     const bobOffset = Math.sin(player.bobTimer) * (isSprinting ? 0.08 : 0.04);
     camera.position.set(player.position.x, player.position.y + bobOffset, player.position.z);
 
-    if (trekkingPoleGroup) {
-      trekkingPoleGroup.position.y = -0.38 + Math.cos(player.bobTimer) * 0.06;
-      trekkingPoleGroup.position.z = -0.65 + Math.sin(player.bobTimer) * 0.08;
-      trekkingPoleGroup.rotation.x = 0.2 + Math.sin(player.bobTimer) * 0.18;
+    if (compassNeedle) {
+      compassNeedle.rotation.y = player.yaw + Math.PI;
+    }
+
+    let activeGroup = null;
+    if (state.equippedItem === 'pole') activeGroup = trekkingPoleGroup;
+    else if (state.equippedItem === 'compass') activeGroup = compassGroup;
+    else if (state.equippedItem === 'flashlight') activeGroup = flashlightHandGroup;
+    else if (state.equippedItem === 'map') activeGroup = mapHandGroup;
+
+    const basePos = {
+      pole: { x: 0.38, y: -0.38, z: -0.65, rx: 0.2, ry: 0.1, rz: -0.15 },
+      compass: { x: 0.26, y: -0.28, z: -0.48, rx: 0.55, ry: -0.15, rz: -0.1 },
+      flashlight: { x: 0.32, y: -0.32, z: -0.55, rx: 0.15, ry: 0.05, rz: -0.1 },
+      map: { x: 0.0, y: -0.32, z: -0.46, rx: 0.72, ry: 0.0, rz: 0.0 }
+    };
+
+    if (activeGroup && basePos[state.equippedItem]) {
+      const bp = basePos[state.equippedItem];
+      activeGroup.position.y = bp.y + Math.cos(player.bobTimer) * 0.05;
+      activeGroup.position.z = bp.z + Math.sin(player.bobTimer) * 0.06;
+      activeGroup.rotation.x = bp.rx + Math.sin(player.bobTimer) * 0.12;
+    }
+
+    if (state.equippedItem === 'map' && Math.random() < 0.08) {
+      renderMapCanvasTexture();
     }
 
     stepTimer += delta * (isSprinting ? 2.6 : 1.7);
@@ -1484,7 +1831,7 @@ function cycleWeather() {
     // 0: Golden Sunrise
     const col = new THREE.Color(0xfbcfe8);
     scene.background = col;
-    scene.fog = new THREE.Fog(0xfbcfe8, 140, 1150);
+    scene.fog = new THREE.FogExp2(0xfbcfe8, 0.0016);
     ambientLight.color.setHex(0xffedd5);
     ambientLight.intensity = 0.85;
     directionalLight.color.setHex(0xffedd5);
@@ -1613,7 +1960,11 @@ function takeSnapshot() {
 
 function toggleHeadlamp() {
   state.headlampOn = !state.headlampOn;
-  headlampLight.intensity = state.headlampOn ? 3.0 : 0;
+  headlampLight.intensity = state.headlampOn ? 3.5 : 0;
+  if (flashlightBeamMesh) flashlightBeamMesh.visible = state.headlampOn;
+  if (state.headlampOn && state.equippedItem !== 'flashlight') {
+    equipItem('flashlight');
+  }
   showNotification(state.headlampOn ? '🔦 Headlamp Dinyalakan' : '🔦 Headlamp Dimatikan');
 }
 

@@ -533,6 +533,12 @@
       display: none;
       box-shadow: 0 8px 25px rgba(0,0,0,0.5);
     }
+    .action-btn.active {
+      border-color: #38bdf8 !important;
+      background: rgba(56, 189, 248, 0.25) !important;
+      box-shadow: 0 0 14px rgba(56, 189, 248, 0.6) !important;
+      color: #38bdf8 !important;
+    }
   </style>
   <script src="three.min.js"></script>
   <script>
@@ -599,6 +605,22 @@
       <div class="bar-bg"><div class="bar-fill bar-water" id="bar-wtr" style="width: 100%;"></div></div>
       <span class="bar-val" id="val-wtr">100</span>
     </div>
+  </div>
+
+  <!-- Equipment Hotbar HUD -->
+  <div id="hud-equipment" style="position: absolute; bottom: 82px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; z-index: 10; pointer-events: auto;">
+    <button class="action-btn equip-btn active" id="btn-equip-pole" onclick="equipItem('pole')">
+      🦯 Pole <span class="key-badge">1</span>
+    </button>
+    <button class="action-btn equip-btn" id="btn-equip-compass" onclick="equipItem('compass')">
+      🧭 Kompas <span class="key-badge">2</span>
+    </button>
+    <button class="action-btn equip-btn" id="btn-equip-flashlight" onclick="equipItem('flashlight')">
+      🔦 Senter <span class="key-badge">3</span>
+    </button>
+    <button class="action-btn equip-btn" id="btn-equip-map" onclick="equipItem('map')">
+      🗺️ Peta 3D <span class="key-badge">4</span>
+    </button>
   </div>
 
   <!-- Quick Action HUD -->
@@ -754,7 +776,7 @@
 
     <div class="controls-help">
       🎮 <b>Kontrol Navigasi & Aksi:</b><br/>
-      [W, A, S, D] Berjalan (Strafe Tilt) • [Shift] Sprint • [Spasi] Melompat • [Klik Kanan] Teropong Binokular<br/>
+      [W, A, S, D] Berjalan • [1, 2, 3, 4] Peralatan Genggam 3D (Pole / Kompas / Senter / Peta) • [Shift] Sprint • [Spasi] Melompat • [Klik Kanan] Teropong<br/>
       [E] Interaksi Mata Air / Warung / Tali Webbing / Setor Sampah • [L] Logbook • [G] Jalur GPX • [P] Mode Foto • [T] Ganti Cuaca
     </div>
   </div>
