@@ -57,7 +57,7 @@
       transform: translateX(-50%);
       background: rgba(15, 23, 42, 0.88);
       border: 1px solid #38bdf8;
-      padding: 4px 12px;
+      padding: 4px 14px;
       border-radius: 20px;
       font-size: 0.75rem;
       font-weight: 700;
@@ -65,6 +65,7 @@
       display: none;
       pointer-events: none;
       z-index: 10;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
     }
 
     /* Binocular Zoom Vignette Overlay */
@@ -126,6 +127,21 @@
       border-radius: 6px;
       font-weight: 700;
       font-size: 0.8rem;
+    }
+
+    /* LNT Trash Counter Badge */
+    .trash-badge {
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 4px;
     }
 
     /* Top Right GPS & Weather HUD */
@@ -249,7 +265,13 @@
       border-radius: 3px;
     }
 
-    /* Interaction Dialog Popup (NPC / Object) */
+    /* GPX Overlay Button */
+    #btn-gpx-toggle {
+      border-color: #10b981;
+      color: #a7f3d0;
+    }
+
+    /* Dialogue Popup (NPC / Landmark) */
     #dialog-popup {
       position: absolute;
       bottom: 100px;
@@ -404,7 +426,7 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      width: 440px;
+      width: 460px;
       max-width: 90vw;
       background: rgba(15, 23, 42, 0.95);
       backdrop-filter: blur(16px);
@@ -428,7 +450,7 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
-      max-height: 300px;
+      max-height: 320px;
       overflow-y: auto;
     }
     .item-row {
@@ -493,6 +515,9 @@
         📍 <span id="current-pos-name" style="color: #f8fafc; font-weight: 700;">Basecamp Patakbanteng</span> 
         • <span class="alt-badge" id="current-elevation">1.700 mdpl</span>
       </div>
+      <div class="trash-badge" id="trash-badge">
+        <span>🗑️ Sampah Carrier: <b id="trash-count">0</b> item (LNT Active)</span>
+      </div>
     </div>
   </div>
 
@@ -542,6 +567,9 @@
     <button class="action-btn" id="btn-headlamp">
       🔦 Headlamp <span class="key-badge">F</span>
     </button>
+    <button class="action-btn" id="btn-gpx-toggle">
+      🗺️ Jalur GPX <span class="key-badge">G</span>
+    </button>
     <button class="action-btn" id="btn-photo">
       📷 Mode Foto <span class="key-badge">P</span>
     </button>
@@ -569,38 +597,38 @@
 
   <div id="notif-banner"></div>
 
-  <!-- Backpack Modal -->
+  <!-- Backpack Modal (with Leave No Trace waste management) -->
   <div id="backpack-modal">
     <div class="modal-title">
-      <span>🎒 Ransel Carrier Pendaki</span>
+      <span>🎒 Ransel Carrier Pendaki (LNT Active)</span>
       <span style="cursor: pointer; font-size: 1.4rem;" id="close-backpack">&times;</span>
     </div>
     <div class="item-grid">
       <div class="item-row">
         <div>
           <div style="font-weight: 700;">💧 Air Mineral 1.5L</div>
-          <div style="font-size: 0.75rem; color: #94a3b8;">+45 Hidrasi & cegah kram</div>
+          <div style="font-size: 0.75rem; color: #94a3b8;">+45 Hidrasi (Menghasilkan 1 Botol Plastik Kosong)</div>
         </div>
         <button class="item-btn" onclick="useItem('water')">Minum</button>
       </div>
       <div class="item-row">
         <div>
           <div style="font-weight: 700;">☕ Kopi Tubruk Jahe Panas</div>
-          <div style="font-size: 0.75rem; color: #94a3b8;">+30 Suhu Badan & +25 Stamina</div>
+          <div style="font-size: 0.75rem; color: #94a3b8;">+30 Suhu & +25 Stamina (1 Bungkus Sachet)</div>
         </div>
         <button class="item-btn" onclick="useItem('coffee')">Seduh</button>
       </div>
       <div class="item-row">
         <div>
           <div style="font-weight: 700;">🍜 Mie Instan Rebus Telur</div>
-          <div style="font-size: 0.75rem; color: #94a3b8;">+35 Nutrisi Energi & +25 Suhu</div>
+          <div style="font-size: 0.75rem; color: #94a3b8;">+35 Nutrisi & +25 Suhu (1 Bungkus Plastik Mie)</div>
         </div>
         <button class="item-btn" onclick="useItem('noodle')">Masak</button>
       </div>
       <div class="item-row">
         <div>
           <div style="font-weight: 700;">🍫 Cokelat Hitam & Madu</div>
-          <div style="font-size: 0.75rem; color: #94a3b8;">+40 Stamina instan mendaki</div>
+          <div style="font-size: 0.75rem; color: #94a3b8;">+40 Stamina (1 Bungkus Foil)</div>
         </div>
         <button class="item-btn" onclick="useItem('chocolate')">Makan</button>
       </div>
@@ -611,13 +639,20 @@
         </div>
         <button class="item-btn" onclick="useItem('blanket')">Pakai</button>
       </div>
+      <div class="item-row" style="background: rgba(239, 68, 68, 0.15); border: 1px dashed rgba(239, 68, 68, 0.4);">
+        <div>
+          <div style="font-weight: 700; color: #fca5a5;">🗑️ Kantong Sampah Logistik (Trash Bag)</div>
+          <div style="font-size: 0.75rem; color: #94a3b8;">Kumpulkan & setorkan di Tempat Sampah Basecamp!</div>
+        </div>
+        <span style="font-weight: 800; color: #fca5a5; font-size: 0.9rem;" id="modal-trash-count">0 Item</span>
+      </div>
     </div>
   </div>
 
   <!-- Start Menu Overlay -->
   <div id="overlay-screen">
     <h1 class="hero-title">TRAILRUTE 3D</h1>
-    <p class="hero-subtitle">Ekspedisi Pendakian Gunung Jawa dalam Grafis 3D Interaktif. Jelajahi sumber mata air, shelter pos kayu, warung kopi sabana, elang jawa, dan panorama puncak!</p>
+    <p class="hero-subtitle">Ekspedisi Pendakian Gunung Jawa dalam Grafis 3D Interaktif. Menampilkan Jalur GPX Neon 3D, Tali Webbing Panjat Tebing, Manajemen Sampah Leave No Trace, Mata Air Alami, dan Warung Ketinggian Sabana!</p>
     
     <div class="mountain-picker">
       <div class="mtn-card active" onclick="selectMountain('prau', this)">
@@ -642,7 +677,7 @@
     <div class="controls-help">
       🎮 <b>Kontrol Navigasi & Aksi:</b><br/>
       [W, A, S, D] Berjalan • [Shift] Sprint • [Spasi] Melompat • [Klik Kanan] Teropong Binokular<br/>
-      [E] Interaksi Mata Air / Warung / NPC • [P] Mode Foto • [T] Ganti Cuaca • [F] Headlamp • [C] Pasang Tenda
+      [E] Interaksi Mata Air / Warung / Tali Webbing / Setor Sampah • [G] Toggle Jalur GPX • [P] Mode Foto • [T] Ganti Cuaca
     </div>
   </div>
 
