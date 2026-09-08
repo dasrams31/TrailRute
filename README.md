@@ -1,35 +1,45 @@
-# ⛰️ TrailRute - Game Pendakian Gunung Pulau Jawa (Terminal & 3D Web)
+# ⛰️ TrailRute 3D - Ekspedisi Pendakian Gunung Pulau Jawa
 
-**TrailRute** hadir dalam dua mode permainan:
-1. **Mode 3D Web Interaktif (Three.js / WebGL)**: Eksplorasi first-person 3D menapaki punggungan gunung, sabana, hutan pinus, dan puncak di atas lautan awan (*Sea of Clouds*).
-2. **Mode RPG CLI / Terminal**: Simulasi manajemen survival berbasis teks dengan kalkulasi waktu Naismith, cuaca Open-Meteo & NOAA Wind Chill.
+**TrailRute 3D** adalah game simulasi dan ekspedisi pendakian gunung di pulau Jawa berbasis Web 3D (Three.js/WebGL) dan CLI RPG.
 
 ---
 
-## 🎮 1. Menjalankan Game 3D Web (Three.js)
+## 🌟 Fitur Utama
 
-Jalankan server web lokal:
+1. **Eksplorasi Gunung Jawa 3D:**
+   - **Gunung Prau (2.565 mdpl)** - Via Patakbanteng (Sabana Teletubbies)
+   - **Gunung Merbabu (3.145 mdpl)** - Via Selo (Sabana 1 & 2)
+   - **Gunung Sumbing (3.371 mdpl)** - Via Garung (Kawah & Pasar Setan)
+
+2. **Fisika & Visual Pendakian:**
+   - **First-Person View & Trekking Pole:** Model tongkat pendaki dengan animasi langkah dan tancapan dinamis.
+   - **Audio Alam Sintetis:** Desir angin gunung (NOAA Wind Chill sync), suara langkah kaki kerikil/tanah, kicauan burung hutan, dan perapian camp.
+   - **Cuaca Dinamis:** Pagi cerah (Golden Sunrise), siang sabana, badai hujan & kabut tebal, hingga malam berbintang.
+   - **Teropong Binokular:** Tahan klik kanan mouse untuk *scouting* lanskap jarak jauh.
+   - **Mode Foto (Photo Mode):** Ambil foto lanskap puncak beresolusi tinggi dengan *watermark* ketinggian otomatis.
+   - **Radar GPS Topografi:** Menampilkan arah mata angin dan posisi pos/puncak.
+   - **NPC Interaktif:** Berdialog dengan Porter dan pendaki lain di pos shelter.
+
+3. **Mode RPG Terminal / CLI:**
+   - Manajemen survival mendalam (*Health, Stamina, Suhu Tubuh, Hidrasi, Nutrisi, Moral*).
+   - Kalkulasi waktu tempuh mendaki berbasis **Aturan Naismith**.
+   - Resep dapur alam pendaki (kopi tubruk jahe, mie rebus, nasi liwet).
+
+---
+
+## 🚀 Cara Menjalankan
+
+### 1. Menjalankan Mode 3D Web:
 ```bash
 python3 serve.py
 ```
-Lalu buka browser di: **`http://localhost:8000`**
+Buka browser di: `http://localhost:8888` (atau buka langsung file `TrailRute_3D.html`).
 
-### Fitur 3D Web:
-- **First-Person Controller:** Bergerak menelusuri kontur lereng gunung secara *real-time* (W, A, S, D + Mouse Look).
-- **Prosedural Gunung Jawa:** Gunung Prau, Gunung Merbabu, dan Gunung Sumbing dengan ketinggian mdpl dinamis.
-- **Vegetasi Hutan & Sabana:** Hutan pinus di lereng bawah, padang sabana, dan bunga edelweiss di zona atas.
-- **Sistem Pasang Tenda 3D:** Tekan tombol **[C]** untuk mendirikan Tenda Dome oranye saat cuaca buruk atau di pos camp.
-- **Headlamp Spot:** Tekan tombol **[F]** untuk menyalakan sorot lampu kepala saat kabut/malam.
-- **HUD Survival:** Pemantauan *Health, Stamina, Suhu Badan (Warmth), & Hidrasi* serta kalkulasi *Wind Chill*.
-
----
-
-## 💻 2. Menjalankan Mode RPG Terminal / CLI
-
-Jalankan game berbasis terminal:
+### 2. Menjalankan Mode RPG Terminal:
 ```bash
 python3 main.py
 ```
 
 ---
+
 *Salam Lestari! 🌲*
