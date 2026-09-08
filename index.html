@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>TrailRute 3D - Ultimate Java Mountain Expedition</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #020617;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #f8fafc;
+    }
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+    
+    /* Crosshair */
+    #crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.85);
+      pointer-events: none;
+      z-index: 10;
+      box-shadow: 0 0 8px rgba(0,0,0,0.8);
+      transition: all 0.15s ease;
+    }
+    #crosshair.interactable {
+      width: 14px;
+      height: 14px;
+      background: #38bdf8;
+      box-shadow: 0 0 12px #38bdf8;
+    }
+
+    /* Binocular Zoom Vignette Overlay */
+    #binocular-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 12;
+      display: none;
+      background: radial-gradient(circle at center, transparent 38%, rgba(0,0,0,0.92) 75%);
+    }
+
+    /* Top Left Mountain HUD */
+    #hud-top-left {
+      position: absolute;
+      top: 16px;
+      left: 20px;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .hud-glass {
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      padding: 10px 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      pointer-events: auto;
+    }
+    .mountain-title {
+      font-size: 1.15rem;
+      font-weight: 800;
+      background: linear-gradient(90deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .pos-info {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .alt-badge {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: white;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.8rem;
+    }
+
+    /* Top Right GPS & Weather HUD */
+    #hud-top-right {
+      position: absolute;
+      top: 16px;
+      right: 20px;
+      z-index: 10;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      pointer-events: none;
+    }
+    #minimap-canvas {
+      width: 76px;
+      height: 76px;
+      border-radius: 50%;
+      background: rgba(15, 23, 42, 0.85);
+      border: 2px solid rgba(56, 189, 248, 0.5);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    .temp-val {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: #facc15;
+    }
+    .windchill-val {
+      font-size: 0.78rem;
+      color: #cbd5e1;
+    }
+
+    /* Bottom HUD Bars */
+    #hud-bottom {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 290px;
+      pointer-events: none;
+    }
+    .stat-row {
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 5px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .stat-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 90px;
+    }
+    .bar-bg {
+      flex: 1;
+      height: 7px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 0 8px;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.2s ease-out;
+    }
+    .bar-health { background: linear-gradient(90deg, #ef4444, #f87171); }
+    .bar-stamina { background: linear-gradient(90deg, #10b981, #34d399); }
+    .bar-warmth { background: linear-gradient(90deg, #ec4899, #f472b6); }
+    .bar-water { background: linear-gradient(90deg, #0284c7, #38bdf8); }
+    .bar-val {
+      font-size: 0.72rem;
+      font-weight: 800;
+      width: 30px;
+      text-align: right;
+    }
+
+    /* Action HUD */
+    #hud-actions {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      z-index: 10;
+      display: flex;
+      gap: 8px;
+      pointer-events: auto;
+    }
+    .action-btn {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      transition: all 0.2s;
+    }
+    .action-btn:hover {
+      background: #0284c7;
+      border-color: #38bdf8;
+      transform: translateY(-2px);
+    }
+    .key-badge {
+      background: rgba(255,255,255,0.18);
+      font-size: 0.65rem;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+
+    /* Interaction Dialog Popup (NPC / Object) */
+    #dialog-popup {
+      position: absolute;
+      bottom: 100px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 520px;
+      max-width: 90vw;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(16px);
+      border: 2px solid #38bdf8;
+      border-radius: 16px;
+      padding: 16px 20px;
+      z-index: 60;
+      display: none;
+      box-shadow: 0 15px 40px rgba(0,0,0,0.7);
+    }
+    .dialog-speaker {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: #38bdf8;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dialog-text {
+      font-size: 0.9rem;
+      color: #f1f5f9;
+      line-height: 1.5;
+      margin-bottom: 12px;
+    }
+    .dialog-btns {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    /* Photo Mode Overlay UI */
+    #photo-ui {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 30px;
+      padding: 10px 24px;
+      display: none;
+      gap: 16px;
+      align-items: center;
+      z-index: 70;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    }
+    .photo-btn {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: white;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 20px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    /* Overlay Start Screen */
+    #overlay-screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at center, rgba(15, 23, 42, 0.88) 0%, rgba(2, 6, 23, 0.98) 100%);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 20px;
+    }
+    .hero-title {
+      font-size: 2.8rem;
+      font-weight: 900;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #38bdf8 0%, #4ade80 50%, #facc15 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+    .hero-subtitle {
+      font-size: 1rem;
+      color: #94a3b8;
+      max-width: 620px;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+    .mountain-picker {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .mtn-card {
+      background: rgba(30, 41, 59, 0.7);
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 14px;
+      width: 175px;
+      cursor: pointer;
+      transition: all 0.25s;
+    }
+    .mtn-card:hover, .mtn-card.active {
+      border-color: #38bdf8;
+      background: rgba(2, 132, 199, 0.25);
+      transform: translateY(-4px);
+    }
+    .mtn-name { font-weight: 800; font-size: 0.95rem; color: #f8fafc; }
+    .mtn-alt { font-size: 0.8rem; color: #38bdf8; margin-top: 3px; font-weight: 700; }
+    .mtn-diff { font-size: 0.72rem; margin-top: 5px; padding: 2px 6px; border-radius: 4px; display: inline-block; font-weight: 600; }
+    .diff-easy { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
+    .diff-med { background: rgba(250, 204, 21, 0.2); color: #facc15; }
+    .diff-hard { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+
+    .btn-start {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: white;
+      border: none;
+      padding: 14px 44px;
+      font-size: 1.1rem;
+      font-weight: 800;
+      border-radius: 50px;
+      cursor: pointer;
+      box-shadow: 0 10px 25px rgba(2, 132, 199, 0.4);
+      transition: all 0.2s;
+    }
+    .btn-start:hover {
+      transform: scale(1.05);
+      box-shadow: 0 12px 30px rgba(2, 132, 199, 0.6);
+    }
+    .controls-help {
+      margin-top: 20px;
+      font-size: 0.8rem;
+      color: #64748b;
+      line-height: 1.6;
+    }
+
+    /* Modal / Backpack */
+    #backpack-modal {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 440px;
+      max-width: 90vw;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      padding: 18px;
+      z-index: 50;
+      display: none;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.7);
+    }
+    .modal-title {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: #38bdf8;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .item-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .item-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(30, 41, 59, 0.6);
+      padding: 9px 12px;
+      border-radius: 8px;
+    }
+    .item-btn {
+      background: #0284c7;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .item-btn:hover { background: #0369a1; }
+
+    #notif-banner {
+      position: absolute;
+      top: 85px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid #38bdf8;
+      color: #f8fafc;
+      padding: 8px 20px;
+      border-radius: 30px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      z-index: 80;
+      display: none;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.5);
+    }
+  </style>
+  <!-- Local Three.js with CDN fallback -->
+  <script src="three.min.js"></script>
+  <script>
+    if (typeof THREE === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');
+    }
+  </script>
+</head>
+<body>
+
+  <div id="canvas-container"></div>
+  <div id="crosshair"></div>
+  <div id="binocular-overlay"></div>
+
+  <!-- Top Left Mountain HUD -->
+  <div id="hud-top-left">
+    <div class="hud-glass">
+      <div class="mountain-title">
+        <span>⛰️</span> <span id="mtn-name-display">Gunung Prau</span>
+      </div>
+      <div class="pos-info">
+        📍 <span id="current-pos-name" style="color: #f8fafc; font-weight: 700;">Basecamp Patakbanteng</span> 
+        • <span class="alt-badge" id="current-elevation">1.700 mdpl</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Right GPS Radar & Weather HUD -->
+  <div id="hud-top-right">
+    <div class="hud-glass" id="weather-widget">
+      <div class="temp-val" id="weather-temp">16.5°C ⛅</div>
+      <div class="windchill-val">Wind Chill: <span id="windchill-temp">14.0°C</span> (<span id="wind-speed">16</span> km/h)</div>
+      <div style="font-size: 0.75rem; color: #4ade80; font-weight: 700; margin-top: 2px;" id="hypo-status">Aman dari Hipotermia</div>
+    </div>
+
+    <canvas id="minimap-canvas" width="150" height="150"></canvas>
+  </div>
+
+  <!-- Bottom HUD (Stats) -->
+  <div id="hud-bottom">
+    <div class="stat-row">
+      <span class="stat-label">❤️ Health</span>
+      <div class="bar-bg"><div class="bar-fill bar-health" id="bar-hp" style="width: 100%;"></div></div>
+      <span class="bar-val" id="val-hp">100</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">⚡ Stamina</span>
+      <div class="bar-bg"><div class="bar-fill bar-stamina" id="bar-stm" style="width: 100%;"></div></div>
+      <span class="bar-val" id="val-stm">100</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">🔥 Suhu Tubuh</span>
+      <div class="bar-bg"><div class="bar-fill bar-warmth" id="bar-wrm" style="width: 100%;"></div></div>
+      <span class="bar-val" id="val-wrm">100</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">💧 Hidrasi</span>
+      <div class="bar-bg"><div class="bar-fill bar-water" id="bar-wtr" style="width: 100%;"></div></div>
+      <span class="bar-val" id="val-wtr">100</span>
+    </div>
+  </div>
+
+  <!-- Quick Action HUD -->
+  <div id="hud-actions">
+    <button class="action-btn" id="btn-backpack">
+      🎒 Ransel <span class="key-badge">TAB / B</span>
+    </button>
+    <button class="action-btn" id="btn-tent">
+      🏕️ Pasang Tenda <span class="key-badge">C</span>
+    </button>
+    <button class="action-btn" id="btn-headlamp">
+      🔦 Headlamp <span class="key-badge">F</span>
+    </button>
+    <button class="action-btn" id="btn-photo">
+      📷 Mode Foto <span class="key-badge">P</span>
+    </button>
+    <button class="action-btn" id="btn-weather-toggle">
+      ⛅ Cuaca <span class="key-badge">T</span>
+    </button>
+  </div>
+
+  <!-- Dialogue Popup (NPC / Object Interaction) -->
+  <div id="dialog-popup">
+    <div class="dialog-speaker" id="dialog-speaker">🎒 Porter Pak Yanto</div>
+    <div class="dialog-text" id="dialog-text">"Monggo mas, istirahat dulu di pos ini. Nanti sebelum tanjakan sabana ada mata air jernih di sisi kiri jalur. Tetap hati-hati ya!"</div>
+    <div class="dialog-btns">
+      <button class="item-btn" id="dialog-btn-action" onclick="handleDialogAction()">Terima Wedang Jahe (+30 Suhu)</button>
+      <button class="item-btn" style="background:#475569;" onclick="closeDialog()">Tutup</button>
+    </div>
+  </div>
+
+  <!-- Photo Mode Controls -->
+  <div id="photo-ui">
+    <span style="font-weight: 700; font-size: 0.9rem;">📷 MODE FOTO PENDAKIAN</span>
+    <button class="photo-btn" onclick="takeSnapshot()">📸 Jepret Foto Puncak</button>
+    <button class="photo-btn" style="background:#475569;" onclick="exitPhotoMode()">Keluar [P / ESC]</button>
+  </div>
+
+  <div id="notif-banner"></div>
+
+  <!-- Backpack Modal -->
+  <div id="backpack-modal">
+    <div class="modal-title">
+      <span>🎒 Ransel Carrier Pendaki</span>
+      <span style="cursor: pointer; font-size: 1.4rem;" id="close-backpack">&times;</span>
+    </div>
+    <div class="item-grid">
+      <div class="item-row">
+        <div>
+          <div style="font-weight: 700;">💧 Air Mineral 1.5L</div>
+          <div style="font-size: 0.75rem; color: #94a3b8;">+45 Hidrasi & cegah kram</div>
+        </div>
+        <button class="item-btn" onclick="useItem('water')">Minum</button>
+      </div>
+      <div class="item-row">
+        <div>
+          <div style="font-weight: 700;">☕ Kopi Tubruk Jahe Panas</div>
+          <div style="font-size: 0.75rem; color: #94a3b8;">+30 Suhu Badan & +25 Stamina</div>
+        </div>
+        <button class="item-btn" onclick="useItem('coffee')">Seduh</button>
+      </div>
+      <div class="item-row">
+        <div>
+          <div style="font-weight: 700;">🍜 Mie Instan Rebus Telur</div>
+          <div style="font-size: 0.75rem; color: #94a3b8;">+35 Nutrisi Energi & +25 Suhu</div>
+        </div>
+        <button class="item-btn" onclick="useItem('noodle')">Masak</button>
+      </div>
+      <div class="item-row">
+        <div>
+          <div style="font-weight: 700;">🍫 Cokelat Hitam & Madu</div>
+          <div style="font-size: 0.75rem; color: #94a3b8;">+40 Stamina instan mendaki</div>
+        </div>
+        <button class="item-btn" onclick="useItem('chocolate')">Makan</button>
+      </div>
+      <div class="item-row">
+        <div>
+          <div style="font-weight: 700;">🩹 Emergency Thermal Blanket</div>
+          <div style="font-size: 0.75rem; color: #94a3b8;">Pulihkan Suhu 100% (Tangani Hipotermia)</div>
+        </div>
+        <button class="item-btn" onclick="useItem('blanket')">Pakai</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Start Menu Overlay -->
+  <div id="overlay-screen">
+    <h1 class="hero-title">TRAILRUTE 3D</h1>
+    <p class="hero-subtitle">Ekspedisi Pendakian Gunung Jawa dalam Grafis 3D Interaktif. Menghadirkan NPC interaktif, efek cuaca hujan badai, mode foto, radar GPS topografi, dan panorama alam!</p>
+    
+    <div class="mountain-picker">
+      <div class="mtn-card active" onclick="selectMountain('prau', this)">
+        <div class="mtn-name">Gunung Prau</div>
+        <div class="mtn-alt">2.565 mdpl</div>
+        <div class="mtn-diff diff-easy">Pemula / Bukit Teletubbies</div>
+      </div>
+      <div class="mtn-card" onclick="selectMountain('merbabu', this)">
+        <div class="mtn-name">Gunung Merbabu</div>
+        <div class="mtn-alt">3.145 mdpl</div>
+        <div class="mtn-diff diff-med">Menengah / Sabana 2</div>
+      </div>
+      <div class="mtn-card" onclick="selectMountain('sumbing', this)">
+        <div class="mtn-name">Gunung Sumbing</div>
+        <div class="mtn-alt">3.371 mdpl</div>
+        <div class="mtn-diff diff-hard">Menantang / Kawah Aktif</div>
+      </div>
+    </div>
+
+    <button class="btn-start" id="btn-start-game">MULAI EKSPEDISI 3D</button>
+
+    <div class="controls-help">
+      🎮 <b>Kontrol Navigasi & Aksi:</b><br/>
+      [W, A, S, D] Berjalan • [Shift] Sprint • [Spasi] Melompat • [Klik Kanan] Teropong Binokular<br/>
+      [E] Interaksi NPC / Tugu • [P] Mode Foto • [T] Ganti Cuaca • [F] Headlamp • [C] Pasang Tenda • [TAB] Ransel
+    </div>
+  </div>
+
+  <script src="game3d.js"></script>
+</body>
+</html>
