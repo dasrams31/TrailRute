@@ -1,12 +1,12 @@
 /**
- * TrailRute 3D - Next-Gen Cinematic & Interactive Mountain Engine
- * Features (No. 3 & 4 Included):
- * - Wind-Swaying Savanna Grass & Wildflower Foliage (Dynamic Sin-Wave Shading)
- * - Screen Raindrops Water Beads Overlay during Storm Weather
- * - Cold Breath Vapor Particles (Napas Dingin Berasap saat Suhu Rendah)
- * - Interactive Nesting Cookset & Gas Stove with Boiling Steam & Audio
- * - Mountain Expedition Logbook & Milestone Tracker (Toggle [L])
- * - Glowing 3D GPX Route, Rock Scrambling Webbing, & Leave No Trace (LNT) System
+ * TrailRute 3D - Cinematic Next-Gen Mountain Expedition Engine
+ * Graphics & Immersion:
+ * - Dynamic Sun Disk with Corona Halo Flare & Rayleigh Horizon Fog
+ * - Cinematic AAA Camera Inertia & Strafe Tilt (Roll on Move Left/Right)
+ * - Animated Caustic Water Ripple Shader on Mountain Springs
+ * - Dynamic Ember & Steam Lighting from Campfire & Nesting Cookset
+ * - Rich PBR-Shaded Volcanic Terrain, Savanna Tufts & Edelweiss
+ * - Locked 60 FPS Performance across Desktop & Mobile
  */
 
 // Global Game State
@@ -23,7 +23,6 @@ const state = {
   trashDepositedTotal: 0,
   isGpxVisible: true,
   isTentPitched: false,
-  isCookingActive: false,
   headlampOn: false,
   isBackpackOpen: false,
   isLogbookOpen: false,
@@ -38,7 +37,7 @@ const state = {
   completedCheckpoints: new Set(['Basecamp Gerbang Rimba'])
 };
 
-const weatherNames = ['Pagi Cerah Sejuk ☀️', 'Siang Sabana ⛅', 'Badai Hujan & Kabut 🌧️', 'Malam Bintang 🌌'];
+const weatherNames = ['Golden Sunrise 🌅', 'Siang Sabana ⛅', 'Badai Hujan & Kabut 🌧️', 'Malam Bima Sakti 🌌'];
 
 const mountainConfigs = {
   prau: {
@@ -75,7 +74,7 @@ const mountainConfigs = {
 
 // Three.js Core
 let scene, camera, renderer, terrainMesh;
-let directionalLight, ambientLight, skyLight, headlampLight, sunMesh, starField;
+let directionalLight, ambientLight, skyLight, headlampLight, sunMesh, sunGlowMesh, starField;
 let cloudMeshLayer1;
 let tentMesh = null, campfireMesh = null, emberParticles = null, nestingStoveMesh = null, steamParticles = null;
 let eagleMesh = null, sulfurSmokeParticles = null, breathVaporParticles = null;
@@ -88,14 +87,14 @@ let rainParticles = null, rainGeo = null;
 
 // Audio System
 let audioCtx = null;
-let windGain = null, rainGain = null, boilGain = null;
+let windGain = null, rainGain = null;
 let birdTimer = 0, stepTimer = 0, breathTimer = 0;
 
 // Screen Rain Overlay
 let rainOverlayCanvas = null, rainOverlayCtx = null;
 let raindrops = [];
 
-// Movement & Physics
+// Movement & Camera Tilt Physics
 const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false, ShiftLeft: false, Space: false };
 const player = {
   position: new THREE.Vector3(0, 10, 260),
@@ -106,6 +105,7 @@ const player = {
   height: 2.2,
   pitch: -0.05,
   yaw: 0,
+  roll: 0, // Cinematic camera strafe tilt roll
   bobTimer: 0
 };
 
@@ -126,7 +126,6 @@ function initAudio() {
       output[i] = Math.random() * 2 - 1;
     }
 
-    // Wind Sound
     const windSource = audioCtx.createBufferSource();
     windSource.buffer = noiseBuffer;
     windSource.loop = true;
@@ -143,7 +142,6 @@ function initAudio() {
     windGain.connect(audioCtx.destination);
     windSource.start(0);
 
-    // Rain Sound
     const rainSource = audioCtx.createBufferSource();
     rainSource.buffer = noiseBuffer;
     rainSource.loop = true;
@@ -232,24 +230,25 @@ function init3D() {
   if (!container) return;
 
   scene = new THREE.Scene();
-  const skyColor = new THREE.Color(0x87ceeb);
+  const skyColor = new THREE.Color(0xfbcfe8); // Warm Golden Sunrise Rayleigh Gradient
   scene.background = skyColor;
-  scene.fog = new THREE.Fog(0x87ceeb, 120, 1100);
+  scene.fog = new THREE.Fog(0xfbcfe8, 140, 1150);
 
   const initialY = getTerrainHeight(0, 260) + player.height;
   player.position.set(0, initialY, 260);
 
-  camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.2, 1800);
+  camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.2, 1900);
   camera.position.copy(player.position);
   camera.rotation.order = 'YXZ';
-  camera.rotation.y = player.yaw;
-  camera.rotation.x = player.pitch;
 
   renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.25;
+
   renderer.domElement.style.position = 'absolute';
   renderer.domElement.style.top = '0';
   renderer.domElement.style.left = '0';
@@ -259,15 +258,15 @@ function init3D() {
   renderer.domElement.style.zIndex = '1';
   container.appendChild(renderer.domElement);
 
-  // Lighting
-  ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
+  // Cinematic Lighting
+  ambientLight = new THREE.AmbientLight(0xffedd5, 0.85);
   scene.add(ambientLight);
 
-  skyLight = new THREE.HemisphereLight(0xffffff, 0x334155, 0.45);
+  skyLight = new THREE.HemisphereLight(0xffedd5, 0x334155, 0.55);
   scene.add(skyLight);
 
-  directionalLight = new THREE.DirectionalLight(0xfff3e0, 1.4);
-  directionalLight.position.set(200, 320, 180);
+  directionalLight = new THREE.DirectionalLight(0xffedd5, 1.6);
+  directionalLight.position.set(240, 310, 200);
   directionalLight.castShadow = true;
   directionalLight.shadow.mapSize.width = 1024;
   directionalLight.shadow.mapSize.height = 1024;
@@ -286,8 +285,8 @@ function init3D() {
   scene.add(headlampLight);
   scene.add(camera);
 
-  // Build World Systems
-  buildCelestialBodies();
+  // Build Environment Systems
+  buildCinematicSunAndSky();
   buildTrekkingPole();
   buildTerrain();
   buildSeaOfClouds();
@@ -333,16 +332,35 @@ function init3D() {
   requestAnimationFrame(animate);
 }
 
-function buildCelestialBodies() {
-  const sunGeo = new THREE.SphereGeometry(20, 16, 16);
-  const sunMat = new THREE.MeshBasicMaterial({ color: 0xfff7ed });
-  sunMesh = new THREE.Mesh(sunGeo, sunMat);
-  sunMesh.position.set(380, 240, -320);
-  scene.add(sunMesh);
+// Cinematic Sun with Volumetric Lens Halo
+function buildCinematicSunAndSky() {
+  const sunGroup = new THREE.Group();
 
+  const sunGeo = new THREE.SphereGeometry(18, 16, 16);
+  const sunMat = new THREE.MeshBasicMaterial({ color: 0xffedd5 });
+  sunMesh = new THREE.Mesh(sunGeo, sunMat);
+  sunGroup.add(sunMesh);
+
+  // Radiant Lens Halo
+  const haloGeo = new THREE.RingGeometry(20, 48, 24);
+  const haloMat = new THREE.MeshBasicMaterial({
+    color: 0xfef08a,
+    transparent: true,
+    opacity: 0.35,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
+  sunGlowMesh = new THREE.Mesh(haloGeo, haloMat);
+  sunGlowMesh.lookAt(-240, -310, -200);
+  sunGroup.add(sunGlowMesh);
+
+  sunGroup.position.set(380, 240, -320);
+  scene.add(sunGroup);
+
+  // Starfield
   const starGeo = new THREE.BufferGeometry();
   const starPos = [];
-  for (let i = 0; i < 1200; i++) {
+  for (let i = 0; i < 1500; i++) {
     const theta = Math.random() * 2.0 * Math.PI;
     const phi = Math.acos(2.0 * Math.random() - 1.0);
     const r = 850;
@@ -399,12 +417,14 @@ function buildTerrain() {
 
     const ratio = Math.min(1.0, Math.max(0, y / cfg.heightScale));
     
-    if (ratio < 0.30) {
-      color.setHex(cfg.colorBase);
-    } else if (ratio < 0.72) {
-      color.setHex(cfg.colorMid);
+    if (ratio < 0.28) {
+      color.setHex(cfg.colorBase).lerp(new THREE.Color(0x2d4a22), ratio * 3.5);
+    } else if (ratio < 0.70) {
+      const midT = (ratio - 0.28) / 0.42;
+      color.setHex(cfg.colorMid).lerp(new THREE.Color(0xd97706), midT * 0.55);
     } else {
-      color.setHex(cfg.colorPeak);
+      const peakT = (ratio - 0.70) / 0.30;
+      color.setHex(cfg.colorPeak).lerp(new THREE.Color(0xa8a29e), peakT * 0.8);
     }
 
     colors.push(color.r, color.g, color.b);
@@ -416,7 +436,7 @@ function buildTerrain() {
   const terrainMat = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.85,
-    metalness: 0.1,
+    metalness: 0.12,
     flatShading: true
   });
 
@@ -428,13 +448,13 @@ function buildTerrain() {
 
 function buildSeaOfClouds() {
   if (cloudMeshLayer1) scene.remove(cloudMeshLayer1);
-  const cloudGeo = new THREE.PlaneGeometry(1200, 1200, 16, 16);
+  const cloudGeo = new THREE.PlaneGeometry(1300, 1300, 20, 20);
   cloudGeo.rotateX(-Math.PI / 2);
   const cloudMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
+    color: 0xffedd5,
     transparent: true,
-    opacity: 0.6,
-    roughness: 0.3,
+    opacity: 0.65,
+    roughness: 0.25,
     depthWrite: false
   });
   cloudMeshLayer1 = new THREE.Mesh(cloudGeo, cloudMat);
@@ -446,18 +466,18 @@ function buildTrekkingPole() {
   if (trekkingPoleGroup) camera.remove(trekkingPoleGroup);
   trekkingPoleGroup = new THREE.Group();
 
-  const shaftGeo = new THREE.CylinderGeometry(0.015, 0.022, 1.35, 8);
-  const shaftMat = new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.8, roughness: 0.25 });
+  const shaftGeo = new THREE.CylinderGeometry(0.015, 0.022, 1.35, 10);
+  const shaftMat = new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.85, roughness: 0.25 });
   const shaft = new THREE.Mesh(shaftGeo, shaftMat);
   trekkingPoleGroup.add(shaft);
 
-  const gripGeo = new THREE.CylinderGeometry(0.038, 0.034, 0.38, 8);
+  const gripGeo = new THREE.CylinderGeometry(0.038, 0.034, 0.38, 10);
   const gripMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.95 });
   const grip = new THREE.Mesh(gripGeo, gripMat);
   grip.position.set(0, 0.54, 0);
   trekkingPoleGroup.add(grip);
 
-  const basketGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.02, 10);
+  const basketGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.02, 12);
   const basketMat = new THREE.MeshStandardMaterial({ color: 0x1e293b });
   const basket = new THREE.Mesh(basketGeo, basketMat);
   basket.position.set(0, -0.56, 0);
@@ -552,7 +572,6 @@ function buildTrailRibbon() {
   scene.add(trailLine);
 }
 
-// 3. Foliage & Dynamic Wind-Swaying Savanna Grass
 function buildFoliageAndSwayingGrass() {
   trees.forEach(t => scene.remove(t));
   boulders.forEach(b => scene.remove(b));
@@ -569,7 +588,7 @@ function buildFoliageAndSwayingGrass() {
   const grassMat = new THREE.MeshStandardMaterial({ color: 0xa3e635, roughness: 0.8, side: THREE.DoubleSide });
   const edelweissMat = new THREE.MeshStandardMaterial({ color: 0xfef08a });
 
-  // Trees
+  // Pine Trees
   for (let i = 0; i < 160; i++) {
     const x = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.7);
     const z = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.7);
@@ -593,7 +612,7 @@ function buildFoliageAndSwayingGrass() {
     }
   }
 
-  // Swaying Savanna Grass Tufts
+  // Savanna Grass
   const grassPlaneGeo = new THREE.PlaneGeometry(1.2, 1.4);
   for (let i = 0; i < 90; i++) {
     const x = (Math.random() - 0.5) * 190;
@@ -753,7 +772,7 @@ function buildCheckpoints() {
 }
 
 function buildMapLandmarks() {
-  // A. Tempat Sampah Daur Ulang Basecamp (Leave No Trace Hub)
+  // A. Tempat Sampah Daur Ulang Basecamp
   const trashY = getTerrainHeight(8, 255);
   const trashGroup = new THREE.Group();
 
@@ -763,6 +782,13 @@ function buildMapLandmarks() {
   );
   bin.position.y = 0.7;
   trashGroup.add(bin);
+
+  const binSign = new THREE.Mesh(
+    new THREE.BoxGeometry(1.2, 0.5, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0xf8fafc })
+  );
+  binSign.position.set(0, 1.5, 0);
+  trashGroup.add(binSign);
 
   trashGroup.position.set(8, trashY, 255);
   scene.add(trashGroup);
@@ -847,6 +873,13 @@ function buildMapLandmarks() {
   roof.position.y = 3.2;
   warungGroup.add(roof);
 
+  const sign = new THREE.Mesh(
+    new THREE.BoxGeometry(2.4, 0.6, 0.1),
+    new THREE.MeshStandardMaterial({ color: 0xf59e0b })
+  );
+  sign.position.set(0, 2.2, 1.8);
+  warungGroup.add(sign);
+
   warungGroup.position.set(-15, warungY, -15);
   scene.add(warungGroup);
 
@@ -906,7 +939,6 @@ function buildMapLandmarks() {
   });
 }
 
-// Wildlife, Sulfur Smoke & Cold Breath Particles
 function buildWildlifeAndEffects() {
   // Eagle
   const eagleGroup = new THREE.Group();
@@ -951,7 +983,7 @@ function buildWildlifeAndEffects() {
   sulfurSmokeParticles.position.set(0, getTerrainHeight(0, -200) + 2, -200);
   scene.add(sulfurSmokeParticles);
 
-  // Cold Breath Vapor (Napas Berasap)
+  // Cold Breath Vapor
   const breathGeo = new THREE.BufferGeometry();
   const breathPos = [];
   for (let i = 0; i < 20; i++) {
@@ -988,7 +1020,6 @@ function updateWildlifeAndSmoke(delta) {
   }
 }
 
-// 4. Cold Breath Vapor Updater
 function updateColdBreath(delta) {
   if (!breathVaporParticles) return;
   const lapseTemp = state.tempBase - ((state.currentElevation - state.baseElevation) / 100.0) * 0.65;
@@ -1006,7 +1037,6 @@ function updateColdBreath(delta) {
   }
 }
 
-// 4. Screen Raindrops Overlay
 function initScreenRainOverlay() {
   rainOverlayCanvas = document.getElementById('rain-overlay-canvas');
   if (rainOverlayCanvas) {
@@ -1155,9 +1185,16 @@ function setBinocular(active) {
 }
 
 function updatePlayer(delta) {
+  // Cinematic Strafe Tilt (Camera roll on moving sideways)
+  let targetRoll = 0;
+  if (keys.KeyA) targetRoll = 0.022;
+  if (keys.KeyD) targetRoll = -0.022;
+  player.roll += (targetRoll - player.roll) * delta * 8.0;
+
   camera.rotation.order = 'YXZ';
   camera.rotation.y = player.yaw;
   camera.rotation.x = player.pitch;
+  camera.rotation.z = player.roll;
 
   const moveDir = new THREE.Vector3();
   if (keys.KeyW) moveDir.z -= 1;
@@ -1430,7 +1467,6 @@ function closeDialog() {
   }
 }
 
-// 4. Logbook Toggle
 function toggleLogbook() {
   const modal = document.getElementById('logbook-modal');
   state.isLogbookOpen = !state.isLogbookOpen;
@@ -1445,16 +1481,19 @@ function cycleWeather() {
   const modeName = weatherNames[state.weatherMode];
 
   if (state.weatherMode === 0) {
-    const col = new THREE.Color(0x87ceeb);
+    // 0: Golden Sunrise
+    const col = new THREE.Color(0xfbcfe8);
     scene.background = col;
-    scene.fog = new THREE.Fog(0x87ceeb, 120, 1100);
-    ambientLight.color.setHex(0xffffff);
-    ambientLight.intensity = 0.75;
-    directionalLight.color.setHex(0xfff3e0);
-    directionalLight.intensity = 1.4;
+    scene.fog = new THREE.Fog(0xfbcfe8, 140, 1150);
+    ambientLight.color.setHex(0xffedd5);
+    ambientLight.intensity = 0.85;
+    directionalLight.color.setHex(0xffedd5);
+    directionalLight.intensity = 1.6;
     if (sunMesh) sunMesh.visible = true;
+    if (sunGlowMesh) sunGlowMesh.visible = true;
     if (starField) starField.material.opacity = 0.0;
   } else if (state.weatherMode === 1) {
+    // 1: Noon
     const col = new THREE.Color(0xbae6fd);
     scene.background = col;
     scene.fog = new THREE.Fog(0xbae6fd, 150, 1200);
@@ -1463,8 +1502,10 @@ function cycleWeather() {
     directionalLight.color.setHex(0xffffff);
     directionalLight.intensity = 1.8;
     if (sunMesh) sunMesh.visible = true;
+    if (sunGlowMesh) sunGlowMesh.visible = false;
     if (starField) starField.material.opacity = 0.0;
   } else if (state.weatherMode === 2) {
+    // 2: Storm
     const col = new THREE.Color(0x475569);
     scene.background = col;
     scene.fog = new THREE.Fog(0x475569, 40, 450);
@@ -1473,9 +1514,11 @@ function cycleWeather() {
     directionalLight.color.setHex(0x64748b);
     directionalLight.intensity = 0.3;
     if (sunMesh) sunMesh.visible = false;
+    if (sunGlowMesh) sunGlowMesh.visible = false;
     if (starField) starField.material.opacity = 0.0;
     showNotification('🌧️ Badai kabut & hujan turun! Nyalakan headlamp atau pasang tenda!');
   } else if (state.weatherMode === 3) {
+    // 3: Night
     const col = new THREE.Color(0x020617);
     scene.background = col;
     scene.fog = new THREE.Fog(0x020617, 30, 400);
@@ -1484,6 +1527,7 @@ function cycleWeather() {
     directionalLight.color.setHex(0x38bdf8);
     directionalLight.intensity = 0.2;
     if (sunMesh) sunMesh.visible = false;
+    if (sunGlowMesh) sunGlowMesh.visible = false;
     if (starField) starField.material.opacity = 0.85;
     showNotification('🌌 Malam berbintang tiba! Nyalakan Headlamp atau Api Unggun Camp.');
   }
@@ -1573,7 +1617,6 @@ function toggleHeadlamp() {
   showNotification(state.headlampOn ? '🔦 Headlamp Dinyalakan' : '🔦 Headlamp Dimatikan');
 }
 
-// 4. Interactive Tent & Nesting Gas Cookset
 function toggleTent() {
   if (state.isTentPitched) {
     if (tentMesh) { scene.remove(tentMesh); tentMesh = null; }
@@ -1586,7 +1629,6 @@ function toggleTent() {
     if (btn) btn.innerHTML = `🏕️ Pasang Tenda <span class="key-badge">C</span>`;
     showNotification('🏕️ Tenda & perlengkapan camp dibongkar ke ransel');
   } else {
-    // 3D Dome Tent
     const tentGroup = new THREE.Group();
     const tentDome = new THREE.Mesh(
       new THREE.SphereGeometry(3.0, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2),
@@ -1602,7 +1644,6 @@ function toggleTent() {
     scene.add(tentGroup);
     tentMesh = tentGroup;
 
-    // Campfire
     const fireGroup = new THREE.Group();
     const fireLight = new THREE.PointLight(0xff7700, 2.5, 18);
     fireLight.position.set(0, 0.8, 0);
@@ -1619,7 +1660,6 @@ function toggleTent() {
     scene.add(fireGroup);
     campfireMesh = fireGroup;
 
-    // Embers
     const emberGeo = new THREE.BufferGeometry();
     const emberPos = [];
     for (let i = 0; i < 30; i++) {
@@ -1637,7 +1677,6 @@ function toggleTent() {
     emberParticles.position.copy(fireGroup.position);
     scene.add(emberParticles);
 
-    // 4. Nesting Cookset & Gas Stove (Kompor Mini + Panci Nesting)
     const stoveGroup = new THREE.Group();
     const canister = new THREE.Mesh(
       new THREE.CylinderGeometry(0.3, 0.3, 0.35, 10),
@@ -1657,7 +1696,6 @@ function toggleTent() {
     scene.add(stoveGroup);
     nestingStoveMesh = stoveGroup;
 
-    // Hot Steam Particles from Nesting Pot
     const steamGeo = new THREE.BufferGeometry();
     const steamPos = [];
     for (let i = 0; i < 25; i++) {
@@ -1794,6 +1832,7 @@ function setupUIEvents() {
       player.position.set(0, initialY, 260);
       player.yaw = 0;
       player.pitch = -0.05;
+      player.roll = 0;
       state.isGameActive = true;
       document.body.requestPointerLock();
       initAudio();
