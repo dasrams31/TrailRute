@@ -1,11 +1,12 @@
 /**
- * TrailRute 3D - Ultimate Mountain Expedition & GIS Simulation Engine
- * New Features (No. 1 & 2):
- * - Real 3D Glowing GPX Neon Track Overlay & Waypoints (Toggle [G])
- * - Rock Scrambling & Tali Webbing Panjat Tebing on Steep Ridges (Hold [E] to Scramble)
- * - Leave No Trace (LNT) Waste Management & Basecamp Recycling Station (Deposit Trash [E])
- * - Sumber Mata Air Alami (Pos 1) & Warung Sabana Mbok Yem (Pos 3)
- * - 60 FPS Optimized Renderer & Local Three.js Architecture
+ * TrailRute 3D - Next-Gen Cinematic & Interactive Mountain Engine
+ * Features (No. 3 & 4 Included):
+ * - Wind-Swaying Savanna Grass & Wildflower Foliage (Dynamic Sin-Wave Shading)
+ * - Screen Raindrops Water Beads Overlay during Storm Weather
+ * - Cold Breath Vapor Particles (Napas Dingin Berasap saat Suhu Rendah)
+ * - Interactive Nesting Cookset & Gas Stove with Boiling Steam & Audio
+ * - Mountain Expedition Logbook & Milestone Tracker (Toggle [L])
+ * - Glowing 3D GPX Route, Rock Scrambling Webbing, & Leave No Trace (LNT) System
  */
 
 // Global Game State
@@ -22,8 +23,10 @@ const state = {
   trashDepositedTotal: 0,
   isGpxVisible: true,
   isTentPitched: false,
+  isCookingActive: false,
   headlampOn: false,
   isBackpackOpen: false,
+  isLogbookOpen: false,
   isPhotoMode: false,
   isBinocularActive: false,
   weatherMode: 0, // 0: Sunrise, 1: Noon, 2: Storm, 3: Night
@@ -31,7 +34,8 @@ const state = {
   windSpeed: 16,
   currentPosName: 'Basecamp Patakbanteng',
   isGameActive: false,
-  activeInteractable: null
+  activeInteractable: null,
+  completedCheckpoints: new Set(['Basecamp Gerbang Rimba'])
 };
 
 const weatherNames = ['Pagi Cerah Sejuk ☀️', 'Siang Sabana ⛅', 'Badai Hujan & Kabut 🌧️', 'Malam Bintang 🌌'];
@@ -73,19 +77,23 @@ const mountainConfigs = {
 let scene, camera, renderer, terrainMesh;
 let directionalLight, ambientLight, skyLight, headlampLight, sunMesh, starField;
 let cloudMeshLayer1;
-let tentMesh = null, campfireMesh = null, emberParticles = null;
-let eagleMesh = null, sulfurSmokeParticles = null;
+let tentMesh = null, campfireMesh = null, emberParticles = null, nestingStoveMesh = null, steamParticles = null;
+let eagleMesh = null, sulfurSmokeParticles = null, breathVaporParticles = null;
 let gpxTrackLine = null, gpxWaypointsGroup = null;
 let webbingRopeGroup = null;
 let checkpoints = [], interactables = [];
-let trees = [], boulders = [], flowers = [];
+let trees = [], boulders = [], grassMeshes = [], flowers = [];
 let trekkingPoleGroup = null;
 let rainParticles = null, rainGeo = null;
 
 // Audio System
 let audioCtx = null;
-let windGain = null, rainGain = null;
-let birdTimer = 0, stepTimer = 0;
+let windGain = null, rainGain = null, boilGain = null;
+let birdTimer = 0, stepTimer = 0, breathTimer = 0;
+
+// Screen Rain Overlay
+let rainOverlayCanvas = null, rainOverlayCtx = null;
+let raindrops = [];
 
 // Movement & Physics
 const keys = { KeyW: false, KeyA: false, KeyS: false, KeyD: false, ShiftLeft: false, Space: false };
@@ -118,6 +126,7 @@ function initAudio() {
       output[i] = Math.random() * 2 - 1;
     }
 
+    // Wind Sound
     const windSource = audioCtx.createBufferSource();
     windSource.buffer = noiseBuffer;
     windSource.loop = true;
@@ -134,6 +143,7 @@ function initAudio() {
     windGain.connect(audioCtx.destination);
     windSource.start(0);
 
+    // Rain Sound
     const rainSource = audioCtx.createBufferSource();
     rainSource.buffer = noiseBuffer;
     rainSource.loop = true;
@@ -283,12 +293,13 @@ function init3D() {
   buildSeaOfClouds();
   buildTrailRibbon();
   buildGlowingGpxTrack();
-  buildFoliageAndRocks();
+  buildFoliageAndSwayingGrass();
   buildCheckpoints();
   buildMapLandmarks();
   buildWebbingClimbingZone();
-  buildWildlife();
+  buildWildlifeAndEffects();
   buildRainSystem();
+  initScreenRainOverlay();
 
   // Listeners & Controls
   window.addEventListener('resize', onWindowResize);
@@ -309,9 +320,12 @@ function init3D() {
       updateAudioAmbiance(delta);
       updateRain(delta);
       updateWildlifeAndSmoke(delta);
-      updateCampfireEmbers(delta);
+      updateSwayingGrass(now * 0.001);
+      updateCampfireAndStove(delta);
+      updateColdBreath(delta);
       updateInteractionProximity();
       drawMinimap();
+      drawScreenRainOverlay();
     }
 
     renderer.render(scene, camera);
@@ -454,7 +468,6 @@ function buildTrekkingPole() {
   camera.add(trekkingPoleGroup);
 }
 
-// 1. Real 3D Glowing GPX Neon Track Overlay
 function buildGlowingGpxTrack() {
   if (gpxTrackLine) scene.remove(gpxTrackLine);
   if (gpxWaypointsGroup) scene.remove(gpxWaypointsGroup);
@@ -478,10 +491,9 @@ function buildGlowingGpxTrack() {
 
   for (let i = 0; i < points.length; i++) {
     const pt = points[i];
-    const y = getTerrainHeight(pt.x, pt.z) + 0.65; // Elevated neon line
+    const y = getTerrainHeight(pt.x, pt.z) + 0.65;
     vertices.push(pt.x, y, pt.z);
 
-    // Glowing waypoint beads
     if (i % 8 === 0) {
       const bead = new THREE.Mesh(
         new THREE.SphereGeometry(0.3, 8, 8),
@@ -540,20 +552,25 @@ function buildTrailRibbon() {
   scene.add(trailLine);
 }
 
-function buildFoliageAndRocks() {
+// 3. Foliage & Dynamic Wind-Swaying Savanna Grass
+function buildFoliageAndSwayingGrass() {
   trees.forEach(t => scene.remove(t));
   boulders.forEach(b => scene.remove(b));
+  grassMeshes.forEach(g => scene.remove(g));
   flowers.forEach(f => scene.remove(f));
   trees = [];
   boulders = [];
+  grassMeshes = [];
   flowers = [];
 
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3e2723 });
   const leafMat = new THREE.MeshStandardMaterial({ color: 0x155e27 });
   const rockMat = new THREE.MeshStandardMaterial({ color: 0x64748b, flatShading: true });
+  const grassMat = new THREE.MeshStandardMaterial({ color: 0xa3e635, roughness: 0.8, side: THREE.DoubleSide });
   const edelweissMat = new THREE.MeshStandardMaterial({ color: 0xfef08a });
 
-  for (let i = 0; i < 180; i++) {
+  // Trees
+  for (let i = 0; i < 160; i++) {
     const x = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.7);
     const z = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.7);
     const y = getTerrainHeight(x, z);
@@ -576,7 +593,24 @@ function buildFoliageAndRocks() {
     }
   }
 
-  for (let i = 0; i < 70; i++) {
+  // Swaying Savanna Grass Tufts
+  const grassPlaneGeo = new THREE.PlaneGeometry(1.2, 1.4);
+  for (let i = 0; i < 90; i++) {
+    const x = (Math.random() - 0.5) * 190;
+    const z = -40 + (Math.random() - 0.5) * 150;
+    const y = getTerrainHeight(x, z);
+
+    if (y > 35 && y < 110) {
+      const grass = new THREE.Mesh(grassPlaneGeo, grassMat);
+      grass.position.set(x, y + 0.7, z);
+      grass.rotation.y = Math.random() * Math.PI;
+      scene.add(grass);
+      grassMeshes.push(grass);
+    }
+  }
+
+  // Boulders
+  for (let i = 0; i < 60; i++) {
     const x = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.65);
     const z = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.65);
     const y = getTerrainHeight(x, z);
@@ -590,6 +624,7 @@ function buildFoliageAndRocks() {
     }
   }
 
+  // Edelweiss
   for (let i = 0; i < 60; i++) {
     const x = (Math.random() - 0.5) * 180;
     const z = -120 + (Math.random() - 0.5) * 120;
@@ -604,7 +639,13 @@ function buildFoliageAndRocks() {
   }
 }
 
-// 2. Rock Scrambling & Tali Webbing Panjat Tebing di Tanjakan Curam (x: 4, z: 45)
+function updateSwayingGrass(time) {
+  for (let i = 0; i < grassMeshes.length; i++) {
+    const g = grassMeshes[i];
+    g.rotation.z = Math.sin(time * 3.5 + i) * 0.14;
+  }
+}
+
 function buildWebbingClimbingZone() {
   if (webbingRopeGroup) scene.remove(webbingRopeGroup);
   webbingRopeGroup = new THREE.Group();
@@ -612,7 +653,6 @@ function buildWebbingClimbingZone() {
   const startY = getTerrainHeight(4, 55);
   const endY = getTerrainHeight(4, 35);
 
-  // Webbing Anchored Rope (Tubular Blue Nylon)
   const ropeCurve = new THREE.LineCurve3(
     new THREE.Vector3(4, startY + 0.5, 55),
     new THREE.Vector3(4, endY + 0.6, 35)
@@ -622,7 +662,6 @@ function buildWebbingClimbingZone() {
   const ropeMesh = new THREE.Mesh(ropeGeo, ropeMat);
   webbingRopeGroup.add(ropeMesh);
 
-  // Steel Pitons / Carabiners anchored into rock
   const pitonGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.6, 6);
   const pitonMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.9 });
   
@@ -643,7 +682,6 @@ function buildWebbingClimbingZone() {
     dialogue: 'Tebing batu curam terjal dengan bentangan tali webbing pengaman. Menggunakan tali membantu memanjat dengan stabil tanpa risiko tergelincir.',
     actionText: 'Genggam Tali & Panjat Tebing Curam (+Naik Lancar)',
     action: () => {
-      // Teleport slightly up the ridge and save stamina
       player.position.z = 32;
       player.position.y = getTerrainHeight(player.position.x, 32) + player.height;
       state.stamina = Math.max(0, state.stamina - 5);
@@ -714,9 +752,8 @@ function buildCheckpoints() {
   });
 }
 
-// 3. Map Landmarks: Mata Air, Warung Mbok Yem, Tempat Sampah Basecamp (LNT)
 function buildMapLandmarks() {
-  // A. Tempat Sampah Daur Ulang Basecamp (Leave No Trace Hub) at (x: 8, z: 255)
+  // A. Tempat Sampah Daur Ulang Basecamp (Leave No Trace Hub)
   const trashY = getTerrainHeight(8, 255);
   const trashGroup = new THREE.Group();
 
@@ -726,13 +763,6 @@ function buildMapLandmarks() {
   );
   bin.position.y = 0.7;
   trashGroup.add(bin);
-
-  const binSign = new THREE.Mesh(
-    new THREE.BoxGeometry(1.2, 0.5, 0.05),
-    new THREE.MeshStandardMaterial({ color: 0xf8fafc })
-  );
-  binSign.position.set(0, 1.5, 0);
-  trashGroup.add(binSign);
 
   trashGroup.position.set(8, trashY, 255);
   scene.add(trashGroup);
@@ -756,7 +786,7 @@ function buildMapLandmarks() {
     }
   });
 
-  // B. Sumber Mata Air Alami Pos 1 (x: -18, z: 185)
+  // B. Sumber Mata Air Alami Pos 1
   const springY = getTerrainHeight(-18, 185);
   const springGroup = new THREE.Group();
 
@@ -798,7 +828,7 @@ function buildMapLandmarks() {
     }
   });
 
-  // C. Warung Ketinggian Sabana di Pos 3 (x: -15, z: -15)
+  // C. Warung Ketinggian Sabana di Pos 3
   const warungY = getTerrainHeight(-15, -15);
   const warungGroup = new THREE.Group();
 
@@ -817,13 +847,6 @@ function buildMapLandmarks() {
   roof.position.y = 3.2;
   warungGroup.add(roof);
 
-  const sign = new THREE.Mesh(
-    new THREE.BoxGeometry(2.4, 0.6, 0.1),
-    new THREE.MeshStandardMaterial({ color: 0xf59e0b })
-  );
-  sign.position.set(0, 2.2, 1.8);
-  warungGroup.add(sign);
-
   warungGroup.position.set(-15, warungY, -15);
   scene.add(warungGroup);
 
@@ -841,7 +864,7 @@ function buildMapLandmarks() {
     }
   });
 
-  // D. NPC Porter Pak Yanto di Pos 2 (x: 20, z: 98)
+  // D. NPC Porter Pak Yanto di Pos 2
   const npcY = getTerrainHeight(20, 98);
   const npcGroup = new THREE.Group();
 
@@ -883,7 +906,9 @@ function buildMapLandmarks() {
   });
 }
 
-function buildWildlife() {
+// Wildlife, Sulfur Smoke & Cold Breath Particles
+function buildWildlifeAndEffects() {
+  // Eagle
   const eagleGroup = new THREE.Group();
   const body = new THREE.Mesh(
     new THREE.ConeGeometry(0.3, 1.2, 5),
@@ -903,6 +928,7 @@ function buildWildlife() {
   scene.add(eagleGroup);
   eagleMesh = eagleGroup;
 
+  // Crater Smoke
   const smokeCount = 80;
   const smokeGeo = new THREE.BufferGeometry();
   const smokePos = [];
@@ -924,6 +950,23 @@ function buildWildlife() {
   sulfurSmokeParticles = new THREE.Points(smokeGeo, smokeMat);
   sulfurSmokeParticles.position.set(0, getTerrainHeight(0, -200) + 2, -200);
   scene.add(sulfurSmokeParticles);
+
+  // Cold Breath Vapor (Napas Berasap)
+  const breathGeo = new THREE.BufferGeometry();
+  const breathPos = [];
+  for (let i = 0; i < 20; i++) {
+    breathPos.push((Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3, -0.6 - Math.random() * 0.8);
+  }
+  breathGeo.setAttribute('position', new THREE.Float32BufferAttribute(breathPos, 3));
+  const breathMat = new THREE.PointsMaterial({
+    color: 0xf1f5f9,
+    size: 0.12,
+    transparent: true,
+    opacity: 0.0,
+    depthWrite: false
+  });
+  breathVaporParticles = new THREE.Points(breathGeo, breathMat);
+  camera.add(breathVaporParticles);
 }
 
 function updateWildlifeAndSmoke(delta) {
@@ -942,6 +985,64 @@ function updateWildlifeAndSmoke(delta) {
       if (pos[i] > 25) pos[i] = 0;
     }
     sulfurSmokeParticles.geometry.attributes.position.needsUpdate = true;
+  }
+}
+
+// 4. Cold Breath Vapor Updater
+function updateColdBreath(delta) {
+  if (!breathVaporParticles) return;
+  const lapseTemp = state.tempBase - ((state.currentElevation - state.baseElevation) / 100.0) * 0.65;
+  if (lapseTemp < 10.0 || state.weatherMode === 3) {
+    breathTimer += delta;
+    if (breathTimer > 3.0) {
+      breathVaporParticles.material.opacity = 0.45;
+      if (breathTimer > 4.2) {
+        breathTimer = 0;
+        breathVaporParticles.material.opacity = 0.0;
+      }
+    }
+  } else {
+    breathVaporParticles.material.opacity = 0.0;
+  }
+}
+
+// 4. Screen Raindrops Overlay
+function initScreenRainOverlay() {
+  rainOverlayCanvas = document.getElementById('rain-overlay-canvas');
+  if (rainOverlayCanvas) {
+    rainOverlayCanvas.width = window.innerWidth;
+    rainOverlayCanvas.height = window.innerHeight;
+    rainOverlayCtx = rainOverlayCanvas.getContext('2d');
+    for (let i = 0; i < 40; i++) {
+      raindrops.push({
+        x: Math.random() * rainOverlayCanvas.width,
+        y: Math.random() * rainOverlayCanvas.height,
+        r: 2 + Math.random() * 4,
+        speed: 1 + Math.random() * 2
+      });
+    }
+  }
+}
+
+function drawScreenRainOverlay() {
+  if (!rainOverlayCanvas || !rainOverlayCtx) return;
+  if (state.weatherMode === 2) {
+    rainOverlayCanvas.style.display = 'block';
+    rainOverlayCtx.clearRect(0, 0, rainOverlayCanvas.width, rainOverlayCanvas.height);
+    rainOverlayCtx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    for (let i = 0; i < raindrops.length; i++) {
+      const d = raindrops[i];
+      d.y += d.speed;
+      if (d.y > rainOverlayCanvas.height) {
+        d.y = 0;
+        d.x = Math.random() * rainOverlayCanvas.width;
+      }
+      rainOverlayCtx.beginPath();
+      rainOverlayCtx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+      rainOverlayCtx.fill();
+    }
+  } else {
+    rainOverlayCanvas.style.display = 'none';
   }
 }
 
@@ -994,6 +1095,7 @@ function setupControls() {
     if (e.code in keys) keys[e.code] = true;
     if (e.code === 'KeyF') toggleHeadlamp();
     if (e.code === 'KeyC') toggleTent();
+    if (e.code === 'KeyL') toggleLogbook();
     if (e.code === 'KeyG') toggleGpxTrack();
     if (e.code === 'KeyP') togglePhotoMode();
     if (e.code === 'KeyT') cycleWeather();
@@ -1024,7 +1126,7 @@ function setupControls() {
   document.addEventListener('contextmenu', e => e.preventDefault());
 
   document.addEventListener('click', () => {
-    if (state.isGameActive && !state.isBackpackOpen && !state.isPhotoMode && document.pointerLockElement !== document.body) {
+    if (state.isGameActive && !state.isBackpackOpen && !state.isPhotoMode && !state.isLogbookOpen && document.pointerLockElement !== document.body) {
       document.body.requestPointerLock();
       initAudio();
       if (audioCtx && audioCtx.state === 'suspended') {
@@ -1136,6 +1238,7 @@ function updatePlayer(delta) {
     if (dist < 16) {
       if (state.currentPosName !== cp.name) {
         state.currentPosName = cp.name;
+        state.completedCheckpoints.add(cp.name);
         const posEl = document.getElementById('current-pos-name');
         if (posEl) posEl.textContent = cp.name;
         showNotification(`🚩 Tiba di: ${cp.name} (${cp.elevation} mdpl)`);
@@ -1322,8 +1425,18 @@ function handleDialogAction() {
 
 function closeDialog() {
   document.getElementById('dialog-popup').style.display = 'none';
-  if (state.isGameActive && !state.isBackpackOpen) {
+  if (state.isGameActive && !state.isBackpackOpen && !state.isLogbookOpen) {
     document.body.requestPointerLock();
+  }
+}
+
+// 4. Logbook Toggle
+function toggleLogbook() {
+  const modal = document.getElementById('logbook-modal');
+  state.isLogbookOpen = !state.isLogbookOpen;
+  if (modal) modal.style.display = state.isLogbookOpen ? 'block' : 'none';
+  if (state.isLogbookOpen) {
+    document.exitPointerLock();
   }
 }
 
@@ -1460,16 +1573,20 @@ function toggleHeadlamp() {
   showNotification(state.headlampOn ? '🔦 Headlamp Dinyalakan' : '🔦 Headlamp Dimatikan');
 }
 
+// 4. Interactive Tent & Nesting Gas Cookset
 function toggleTent() {
   if (state.isTentPitched) {
     if (tentMesh) { scene.remove(tentMesh); tentMesh = null; }
     if (campfireMesh) { scene.remove(campfireMesh); campfireMesh = null; }
     if (emberParticles) { scene.remove(emberParticles); emberParticles = null; }
+    if (nestingStoveMesh) { scene.remove(nestingStoveMesh); nestingStoveMesh = null; }
+    if (steamParticles) { scene.remove(steamParticles); steamParticles = null; }
     state.isTentPitched = false;
     const btn = document.getElementById('btn-tent');
     if (btn) btn.innerHTML = `🏕️ Pasang Tenda <span class="key-badge">C</span>`;
-    showNotification('🏕️ Tenda & camp dibongkar kembali ke ransel');
+    showNotification('🏕️ Tenda & perlengkapan camp dibongkar ke ransel');
   } else {
+    // 3D Dome Tent
     const tentGroup = new THREE.Group();
     const tentDome = new THREE.Mesh(
       new THREE.SphereGeometry(3.0, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2),
@@ -1485,6 +1602,7 @@ function toggleTent() {
     scene.add(tentGroup);
     tentMesh = tentGroup;
 
+    // Campfire
     const fireGroup = new THREE.Group();
     const fireLight = new THREE.PointLight(0xff7700, 2.5, 18);
     fireLight.position.set(0, 0.8, 0);
@@ -1501,6 +1619,7 @@ function toggleTent() {
     scene.add(fireGroup);
     campfireMesh = fireGroup;
 
+    // Embers
     const emberGeo = new THREE.BufferGeometry();
     const emberPos = [];
     for (let i = 0; i < 30; i++) {
@@ -1518,15 +1637,53 @@ function toggleTent() {
     emberParticles.position.copy(fireGroup.position);
     scene.add(emberParticles);
 
+    // 4. Nesting Cookset & Gas Stove (Kompor Mini + Panci Nesting)
+    const stoveGroup = new THREE.Group();
+    const canister = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.3, 0.3, 0.35, 10),
+      new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.8 })
+    );
+    canister.position.y = 0.18;
+    stoveGroup.add(canister);
+
+    const nestingPot = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.38, 0.38, 0.45, 10),
+      new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.9 })
+    );
+    nestingPot.position.y = 0.58;
+    stoveGroup.add(nestingPot);
+
+    stoveGroup.position.set(tentPos.x + 1.8, tentPos.y + 0.2, tentPos.z + 1.8);
+    scene.add(stoveGroup);
+    nestingStoveMesh = stoveGroup;
+
+    // Hot Steam Particles from Nesting Pot
+    const steamGeo = new THREE.BufferGeometry();
+    const steamPos = [];
+    for (let i = 0; i < 25; i++) {
+      steamPos.push((Math.random() - 0.5) * 0.3, Math.random() * 1.2, (Math.random() - 0.5) * 0.3);
+    }
+    steamGeo.setAttribute('position', new THREE.Float32BufferAttribute(steamPos, 3));
+    const steamMat = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.18,
+      transparent: true,
+      opacity: 0.6,
+      depthWrite: false
+    });
+    steamParticles = new THREE.Points(steamGeo, steamMat);
+    steamParticles.position.set(stoveGroup.position.x, stoveGroup.position.y + 0.8, stoveGroup.position.z);
+    scene.add(steamParticles);
+
     state.isTentPitched = true;
     state.warmth = Math.min(100, state.warmth + 40);
     const btn = document.getElementById('btn-tent');
     if (btn) btn.innerHTML = `🏕️ Bongkar Tenda <span class="key-badge">C</span>`;
-    showNotification('🏕️ Tenda Dome & Api Unggun berdiri! Suhu tubuh pulih hangat.');
+    showNotification('🏕️ Tenda Dome, Api Unggun & Kompor Nesting Siap! Suhu badan hangat.');
   }
 }
 
-function updateCampfireEmbers(delta) {
+function updateCampfireAndStove(delta) {
   if (emberParticles) {
     const pos = emberParticles.geometry.attributes.position.array;
     for (let i = 1; i < pos.length; i += 3) {
@@ -1534,6 +1691,15 @@ function updateCampfireEmbers(delta) {
       if (pos[i] > 3.0) pos[i] = 0.2;
     }
     emberParticles.geometry.attributes.position.needsUpdate = true;
+  }
+
+  if (steamParticles) {
+    const pos = steamParticles.geometry.attributes.position.array;
+    for (let i = 1; i < pos.length; i += 3) {
+      pos[i] += delta * 1.2;
+      if (pos[i] > 1.4) pos[i] = 0.1;
+    }
+    steamParticles.geometry.attributes.position.needsUpdate = true;
   }
 }
 
@@ -1573,7 +1739,7 @@ function useItem(type) {
     state.warmth = Math.min(100, state.warmth + 25);
     state.stamina = Math.min(100, state.stamina + 35);
     state.trashCount += 1;
-    showNotification('🍜 Menikmati mie rebus (+35 Stamina) • 1 Bungkus masuk ke Trash Bag');
+    showNotification('🍜 Memasak mie rebus di nesting (+35 Stamina) • 1 Bungkus masuk ke Trash Bag');
   } else if (type === 'chocolate') {
     state.stamina = Math.min(100, state.stamina + 40);
     state.trashCount += 1;
@@ -1617,12 +1783,12 @@ function setupUIEvents() {
       if (overlay) overlay.style.display = 'none';
 
       buildTerrain();
-      buildFoliageAndRocks();
+      buildFoliageAndSwayingGrass();
       buildCheckpoints();
       buildMapLandmarks();
       buildWebbingClimbingZone();
       buildGlowingGpxTrack();
-      buildWildlife();
+      buildWildlifeAndEffects();
 
       const initialY = getTerrainHeight(0, 260) + player.height;
       player.position.set(0, initialY, 260);
@@ -1639,19 +1805,23 @@ function setupUIEvents() {
   const tentBtn = document.getElementById('btn-tent');
   const lampBtn = document.getElementById('btn-headlamp');
   const gpxBtn = document.getElementById('btn-gpx-toggle');
+  const logBtn = document.getElementById('btn-logbook');
   const photoBtn = document.getElementById('btn-photo');
   const weatherBtn = document.getElementById('btn-weather-toggle');
   const restBtn = document.getElementById('btn-rest');
   const closeBp = document.getElementById('close-backpack');
+  const closeLog = document.getElementById('close-logbook');
 
   if (bpBtn) bpBtn.addEventListener('click', toggleBackpack);
   if (tentBtn) tentBtn.addEventListener('click', toggleTent);
   if (lampBtn) lampBtn.addEventListener('click', toggleHeadlamp);
   if (gpxBtn) gpxBtn.addEventListener('click', toggleGpxTrack);
+  if (logBtn) logBtn.addEventListener('click', toggleLogbook);
   if (photoBtn) photoBtn.addEventListener('click', togglePhotoMode);
   if (weatherBtn) weatherBtn.addEventListener('click', cycleWeather);
   if (restBtn) restBtn.addEventListener('click', restAndDrink);
   if (closeBp) closeBp.addEventListener('click', toggleBackpack);
+  if (closeLog) closeLog.addEventListener('click', toggleLogbook);
 }
 
 function onWindowResize() {
@@ -1659,6 +1829,10 @@ function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    if (rainOverlayCanvas) {
+      rainOverlayCanvas.width = window.innerWidth;
+      rainOverlayCanvas.height = window.innerHeight;
+    }
   }
 }
 
