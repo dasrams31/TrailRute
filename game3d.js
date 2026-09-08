@@ -76,7 +76,7 @@ const mountainConfigs = {
 // Three.js Core
 let scene, camera, renderer, terrainMesh;
 let directionalLight, ambientLight, skyLight, headlampLight, sunMesh, sunGlowMesh, starField;
-let cloudMeshLayer1;
+let cloudMeshLayer1, cloudGroupLayer2, sunShaftsGroup = null;
 let tentMesh = null, campfireMesh = null, emberParticles = null, nestingStoveMesh = null, steamParticles = null;
 let eagleMesh = null, sulfurSmokeParticles = null, breathVaporParticles = null;
 let gpxTrackLine = null, gpxWaypointsGroup = null;
@@ -373,6 +373,7 @@ function init3D() {
   buildHandheldMap();
   buildTerrain();
   buildSeaOfClouds();
+  buildSunShafts();
   buildTrailRibbon();
   buildGlowingGpxTrack();
   buildFoliageAndSwayingGrass();
@@ -488,8 +489,6 @@ function buildTerrain() {
   terrainGeo.rotateX(-Math.PI / 2);
 
   const pos = terrainGeo.attributes.position;
-  const colors = [];
-  const color = new THREE.Color();
   const cfg = mountainConfigs[state.mountain];
 
   for (let i = 0; i < pos.count; i++) {
@@ -497,32 +496,47 @@ function buildTerrain() {
     const z = pos.getZ(i);
     const y = getTerrainHeight(x, z);
     pos.setY(i, y);
+  }
 
+  terrainGeo.computeVertexNormals();
+  const normals = terrainGeo.attributes.normal;
+  const colors = [];
+  const color = new THREE.Color();
+
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    const ny = normals.getY(i); // Upward normal vector component (1.0 = flat ground, <0.7 = steep cliff)
     const ratio = Math.min(1.0, Math.max(0, y / cfg.heightScale));
-    
-    if (ratio < 0.28) {
-      color.setHex(cfg.colorBase).lerp(new THREE.Color(0x2d4a22), ratio * 3.5);
-    } else if (ratio < 0.70) {
-      const midT = (ratio - 0.28) / 0.42;
-      color.setHex(cfg.colorMid).lerp(new THREE.Color(0xd97706), midT * 0.55);
+
+    // Multi-Material Slope & Elevation Splatting
+    if (ny < 0.68) {
+      // Steep Cliff / Volcanic Rock Splat
+      color.setHex(0x1e293b).lerp(new THREE.Color(0x475569), Math.random() * 0.3);
+    } else if (ratio < 0.30) {
+      // Valley & Trail Savanna Grass
+      color.setHex(cfg.colorBase).lerp(new THREE.Color(0x15803d), ratio * 3.0);
+    } else if (ratio < 0.68) {
+      // Mid-slope Savanna & Golden Tufts
+      const midT = (ratio - 0.30) / 0.38;
+      color.setHex(cfg.colorMid).lerp(new THREE.Color(0xd97706), midT * 0.6);
     } else {
-      const peakT = (ratio - 0.70) / 0.30;
-      color.setHex(cfg.colorPeak).lerp(new THREE.Color(0xa8a29e), peakT * 0.8);
+      // Peak Volcanic Rock & Sulfur Stone
+      const peakT = (ratio - 0.68) / 0.32;
+      color.setHex(cfg.colorPeak).lerp(new THREE.Color(0x94a3b8), peakT * 0.85);
     }
 
     colors.push(color.r, color.g, color.b);
   }
 
   terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  terrainGeo.computeVertexNormals();
 
   const { normalTex, roughnessTex } = createProceduralTerrainTextures();
   const terrainMat = new THREE.MeshStandardMaterial({
     vertexColors: true,
     normalMap: normalTex,
-    normalScale: new THREE.Vector2(1.5, 1.5),
+    normalScale: new THREE.Vector2(1.8, 1.8),
     roughnessMap: roughnessTex,
-    roughness: 0.85,
+    roughness: 0.82,
     metalness: 0.08,
     flatShading: false
   });
@@ -535,20 +549,118 @@ function buildTerrain() {
 
 function buildSeaOfClouds() {
   if (cloudMeshLayer1) scene.remove(cloudMeshLayer1);
-  const cloudGeo = new THREE.PlaneGeometry(1300, 1300, 20, 20);
+  if (cloudGroupLayer2) scene.remove(cloudGroupLayer2);
+
+  const cloudGeo = new THREE.PlaneGeometry(1400, 1400, 20, 20);
   cloudGeo.rotateX(-Math.PI / 2);
   const cloudMat = new THREE.MeshStandardMaterial({
     color: 0xffedd5,
     transparent: true,
-    opacity: 0.65,
+    opacity: 0.60,
     roughness: 0.25,
     depthWrite: false
   });
   cloudMeshLayer1 = new THREE.Mesh(cloudGeo, cloudMat);
   cloudMeshLayer1.position.y = 28;
   scene.add(cloudMeshLayer1);
+
+  // Volumetric 3D Cloud Puff Deck (Samudra di Atas Awan)
+  cloudGroupLayer2 = new THREE.Group();
+  const puffGeo = new THREE.DodecahedronGeometry(22, 1);
+  const puffMat = new THREE.MeshStandardMaterial({
+    color: 0xfff7ed,
+    transparent: true,
+    opacity: 0.45,
+    roughness: 0.4,
+    depthWrite: false
+  });
+
+  for (let i = 0; i < 75; i++) {
+    const puff = new THREE.Mesh(puffGeo, puffMat);
+    const px = (Math.random() - 0.5) * 1100;
+    const pz = (Math.random() - 0.5) * 1100;
+    const py = 30 + Math.random() * 14;
+    puff.position.set(px, py, pz);
+    puff.scale.set(1.5 + Math.random() * 1.5, 0.8 + Math.random() * 0.6, 1.5 + Math.random() * 1.5);
+    cloudGroupLayer2.add(puff);
+  }
+  scene.add(cloudGroupLayer2);
 }
 
+function buildSunShafts() {
+  if (sunShaftsGroup) scene.remove(sunShaftsGroup);
+  sunShaftsGroup = new THREE.Group();
+
+  const shaftGeo = new THREE.CylinderGeometry(0.8, 120, 500, 16, 1, true);
+  shaftGeo.rotateX(-Math.PI / 2);
+  shaftGeo.translate(0, 0, 250);
+
+  const shaftMat = new THREE.MeshBasicMaterial({
+    color: 0xfff7ed,
+    transparent: true,
+    opacity: 0.16,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
+
+  for (let i = 0; i < 5; i++) {
+    const shaft = new THREE.Mesh(shaftGeo, shaftMat);
+    shaft.rotation.z = (i * Math.PI) / 2.5;
+    shaft.rotation.y = (Math.random() - 0.5) * 0.2;
+    sunShaftsGroup.add(shaft);
+  }
+
+  if (directionalLight) {
+    sunShaftsGroup.position.copy(directionalLight.position);
+    sunShaftsGroup.lookAt(0, 40, 0);
+  }
+  scene.add(sunShaftsGroup);
+}
+
+
+
+function createPlayerArmMesh(colorHex = 0xd97706) {
+  const armGroup = new THREE.Group();
+
+  // Windbreaker Sleeve (Mountaineering Outdoor Jacket)
+  const sleeveGeo = new THREE.CylinderGeometry(0.048, 0.058, 0.45, 12);
+  sleeveGeo.rotateX(Math.PI / 2);
+  const sleeveMat = new THREE.MeshStandardMaterial({
+    color: colorHex,
+    roughness: 0.82,
+    metalness: 0.12
+  });
+  const sleeve = new THREE.Mesh(sleeveGeo, sleeveMat);
+  sleeve.position.set(0, -0.05, 0.22);
+  sleeve.castShadow = true;
+  armGroup.add(sleeve);
+
+  // Black Cuff Band
+  const cuffGeo = new THREE.CylinderGeometry(0.049, 0.049, 0.04, 12);
+  cuffGeo.rotateX(Math.PI / 2);
+  const cuffMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 });
+  const cuff = new THREE.Mesh(cuffGeo, cuffMat);
+  cuff.position.set(0, -0.05, 0.01);
+  armGroup.add(cuff);
+
+  // Tactical Mountaineering Glove
+  const handGeo = new THREE.BoxGeometry(0.075, 0.065, 0.09);
+  const handMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.88, metalness: 0.2 });
+  const hand = new THREE.Mesh(handGeo, handMat);
+  hand.position.set(0, -0.04, -0.04);
+  hand.castShadow = true;
+  armGroup.add(hand);
+
+  // Glove Thumb
+  const thumbGeo = new THREE.CylinderGeometry(0.016, 0.018, 0.07, 8);
+  thumbGeo.rotateZ(-Math.PI / 4);
+  const thumb = new THREE.Mesh(thumbGeo, handMat);
+  thumb.position.set(-0.035, -0.02, -0.03);
+  armGroup.add(thumb);
+
+  return armGroup;
+}
 
 function buildHandheldCompass() {
   if (compassGroup) camera.remove(compassGroup);
@@ -599,6 +711,9 @@ function buildHandheldCompass() {
   glass.position.y = 0.028;
   compassGroup.add(glass);
 
+  const compassArm = createPlayerArmMesh(0x0284c7);
+  compassArm.position.set(0, -0.08, 0.22);
+  compassGroup.add(compassArm);
   compassGroup.position.set(0.26, -0.28, -0.48);
   compassGroup.rotation.set(0.55, -0.15, -0.1);
   camera.add(compassGroup);
@@ -643,6 +758,9 @@ function buildHandheldFlashlight() {
   flashlightBeamMesh.visible = state.headlampOn;
   flashlightHandGroup.add(flashlightBeamMesh);
 
+  const flashArm = createPlayerArmMesh(0x0f766e);
+  flashArm.position.set(0, -0.05, 0.22);
+  flashlightHandGroup.add(flashArm);
   flashlightHandGroup.position.set(0.32, -0.32, -0.55);
   flashlightHandGroup.rotation.set(0.15, 0.05, -0.1);
   camera.add(flashlightHandGroup);
@@ -679,6 +797,12 @@ function buildHandheldMap() {
   paper.position.y = 0.009;
   mapHandGroup.add(paper);
 
+  const mapArmL = createPlayerArmMesh(0xd97706);
+  mapArmL.position.set(-0.16, -0.05, 0.2);
+  mapHandGroup.add(mapArmL);
+  const mapArmR = createPlayerArmMesh(0xd97706);
+  mapArmR.position.set(0.16, -0.05, 0.2);
+  mapHandGroup.add(mapArmR);
   mapHandGroup.position.set(0.0, -0.32, -0.46);
   mapHandGroup.rotation.set(0.72, 0.0, 0.0);
   camera.add(mapHandGroup);
@@ -783,6 +907,9 @@ function buildTrekkingPole() {
   basket.position.set(0, -0.56, 0);
   trekkingPoleGroup.add(basket);
 
+  const poleArm = createPlayerArmMesh(0xe11d48);
+  poleArm.position.set(0, 0.1, 0.2);
+  trekkingPoleGroup.add(poleArm);
   trekkingPoleGroup.position.set(0.38, -0.38, -0.65);
   trekkingPoleGroup.rotation.set(0.2, 0.1, -0.15);
   camera.add(trekkingPoleGroup);
