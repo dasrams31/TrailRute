@@ -1,11 +1,13 @@
 /**
- * TrailRute 3D - Ultra-Reliable, 100% Guaranteed Visible 3D Mountain Engine
- * Fixes:
- * - Proper terrain surface height initialization (Camera is never underground!)
- * - Crisp Linear Fog & Vibrant Mountain Blue Sky Background
- * - Robust Standard Meshes (No zero-determinant instancing matrix bugs)
- * - Explicit WebGL Canvas Styling (width: 100%, height: 100%, z-index: 1)
- * - Safe Shadow & Lighting Setup for All GPUs (Intel, Nvidia, Apple, Mobile)
+ * TrailRute 3D - Next-Gen Rich Map & High-Fidelity Mountain Expedition Engine
+ * Map Features:
+ * - Sumber Mata Air Alami (Pancuran Bambu & Kolam Batu) di Pos 1 (Isi Ulang Air [E])
+ * - Pondok Warung Ketinggian Sabana (Warung Mbok Yem / Kopi & Nasi Pecel) di Pos 3
+ * - Shelter Gazebo Kayu di Pos 1 & Pos 2
+ * - Burung Elang Jawa Melayang Mengitari Puncak (Animated Sky Wildlife)
+ * - Fumarol Asap Kawah Vulkanik di Puncak
+ * - Tugu Triangulasi Puncak & Tiang Bendera Merah Putih
+ * - Radar Topografi Minimap & Mode Foto dengan Watermark
  */
 
 // Global Game State
@@ -23,12 +25,12 @@ const state = {
   isBackpackOpen: false,
   isPhotoMode: false,
   isBinocularActive: false,
-  weatherMode: 0, // 0: Cerah Pagi, 1: Siang, 2: Hujan, 3: Malam
+  weatherMode: 0, // 0: Sunrise, 1: Noon, 2: Storm, 3: Night
   tempBase: 16.0,
   windSpeed: 16,
   currentPosName: 'Basecamp Patakbanteng',
   isGameActive: false,
-  activeNPC: null
+  activeInteractable: null
 };
 
 const weatherNames = ['Pagi Cerah Sejuk ☀️', 'Siang Sabana ⛅', 'Badai Hujan & Kabut 🌧️', 'Malam Bintang 🌌'];
@@ -38,7 +40,7 @@ const mountainConfigs = {
     name: 'Gunung Prau',
     base: 1700,
     peak: 2565,
-    heightScale: 140,
+    heightScale: 145,
     basecampName: 'Basecamp Patakbanteng',
     colorBase: 0x2e7d32,
     colorMid: 0x8bc34a,
@@ -48,7 +50,7 @@ const mountainConfigs = {
     name: 'Gunung Merbabu',
     base: 1830,
     peak: 3145,
-    heightScale: 195,
+    heightScale: 200,
     basecampName: 'Basecamp Selo',
     colorBase: 0x1b5e20,
     colorMid: 0x7cb342,
@@ -58,7 +60,7 @@ const mountainConfigs = {
     name: 'Gunung Sumbing',
     base: 1450,
     peak: 3371,
-    heightScale: 245,
+    heightScale: 250,
     basecampName: 'Basecamp Garung',
     colorBase: 0x33691e,
     colorMid: 0x689f38,
@@ -68,10 +70,13 @@ const mountainConfigs = {
 
 // Three.js Core
 let scene, camera, renderer, terrainMesh;
-let directionalLight, ambientLight, skyLight, headlampLight, sunMesh, moonMesh, starField;
+let directionalLight, ambientLight, skyLight, headlampLight, sunMesh, starField;
 let cloudMeshLayer1;
 let tentMesh = null, campfireMesh = null, emberParticles = null;
-let checkpoints = [], npcs = [];
+let eagleMesh = null;
+let sulfurSmokeParticles = null;
+let waterSpringMesh = null, warungMesh = null;
+let checkpoints = [], interactables = [];
 let trees = [], boulders = [], flowers = [];
 let trekkingPoleGroup = null;
 let rainParticles = null, rainGeo = null;
@@ -95,7 +100,7 @@ const player = {
   bobTimer: 0
 };
 
-const TERRAIN_SIZE = 700;
+const TERRAIN_SIZE = 720;
 const TERRAIN_SEGMENTS = 120;
 
 // Procedural Audio Engine
@@ -112,7 +117,6 @@ function initAudio() {
       output[i] = Math.random() * 2 - 1;
     }
 
-    // Wind Sound
     const windSource = audioCtx.createBufferSource();
     windSource.buffer = noiseBuffer;
     windSource.loop = true;
@@ -129,7 +133,6 @@ function initAudio() {
     windGain.connect(audioCtx.destination);
     windSource.start(0);
 
-    // Rain Sound
     const rainSource = audioCtx.createBufferSource();
     rainSource.buffer = noiseBuffer;
     rainSource.loop = true;
@@ -217,13 +220,11 @@ function init3D() {
   const container = document.getElementById('canvas-container');
   if (!container) return;
 
-  // 1. Scene with crisp mountain blue sky
   scene = new THREE.Scene();
-  const skyColor = new THREE.Color(0x87ceeb); // Clear Alpine Blue Sky
+  const skyColor = new THREE.Color(0x87ceeb); // Clear Mountain Blue Sky
   scene.background = skyColor;
   scene.fog = new THREE.Fog(0x87ceeb, 120, 1100);
 
-  // 2. Camera Setup
   const initialY = getTerrainHeight(0, 260) + player.height;
   player.position.set(0, initialY, 260);
 
@@ -233,7 +234,6 @@ function init3D() {
   camera.rotation.y = player.yaw;
   camera.rotation.x = player.pitch;
 
-  // 3. Renderer Setup
   renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -248,7 +248,7 @@ function init3D() {
   renderer.domElement.style.zIndex = '1';
   container.appendChild(renderer.domElement);
 
-  // 4. Lighting
+  // Lighting
   ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
   scene.add(ambientLight);
 
@@ -268,7 +268,6 @@ function init3D() {
   directionalLight.shadow.camera.bottom = -300;
   scene.add(directionalLight);
 
-  // Headlamp
   headlampLight = new THREE.SpotLight(0xffffff, 0, 95, Math.PI / 4.2, 0.35, 1);
   headlampLight.position.copy(camera.position);
   camera.add(headlampLight.target);
@@ -276,7 +275,7 @@ function init3D() {
   scene.add(headlampLight);
   scene.add(camera);
 
-  // 5. Build Game World
+  // Build World Systems
   buildCelestialBodies();
   buildTrekkingPole();
   buildTerrain();
@@ -284,15 +283,16 @@ function init3D() {
   buildTrailRibbon();
   buildFoliageAndRocks();
   buildCheckpoints();
-  buildNPCs();
+  buildMapLandmarks();
+  buildWildlife();
   buildRainSystem();
 
-  // 6. Listeners & Controls
+  // Listeners & Controls
   window.addEventListener('resize', onWindowResize);
   setupControls();
   setupUIEvents();
 
-  // 7. Render Loop
+  // Animation Loop
   let lastTime = performance.now();
   function animate(now) {
     requestAnimationFrame(animate);
@@ -305,8 +305,9 @@ function init3D() {
       updateWeatherDisplay();
       updateAudioAmbiance(delta);
       updateRain(delta);
+      updateWildlifeAndSmoke(delta);
       updateCampfireEmbers(delta);
-      updateNPCProximity();
+      updateInteractionProximity();
       drawMinimap();
     }
 
@@ -315,7 +316,6 @@ function init3D() {
   requestAnimationFrame(animate);
 }
 
-// Celestial Sun & Stars
 function buildCelestialBodies() {
   const sunGeo = new THREE.SphereGeometry(20, 16, 16);
   const sunMat = new THREE.MeshBasicMaterial({ color: 0xfff7ed });
@@ -346,7 +346,6 @@ function buildCelestialBodies() {
   scene.add(starField);
 }
 
-// Height Formula for Slopes & Summits
 function getTerrainHeight(x, z) {
   const cfg = mountainConfigs[state.mountain];
   const peakX = 0;
@@ -364,7 +363,6 @@ function getTerrainHeight(x, z) {
   return h;
 }
 
-// Build 3D Mountain Terrain
 function buildTerrain() {
   if (terrainMesh) scene.remove(terrainMesh);
 
@@ -411,7 +409,6 @@ function buildTerrain() {
   scene.add(terrainMesh);
 }
 
-// Sea of Clouds in Low Valleys
 function buildSeaOfClouds() {
   if (cloudMeshLayer1) scene.remove(cloudMeshLayer1);
   const cloudGeo = new THREE.PlaneGeometry(1200, 1200, 16, 16);
@@ -428,7 +425,6 @@ function buildSeaOfClouds() {
   scene.add(cloudMeshLayer1);
 }
 
-// First-Person Trekking Pole Model
 function buildTrekkingPole() {
   if (trekkingPoleGroup) camera.remove(trekkingPoleGroup);
   trekkingPoleGroup = new THREE.Group();
@@ -455,7 +451,6 @@ function buildTrekkingPole() {
   camera.add(trekkingPoleGroup);
 }
 
-// Trail Line Connecting Checkpoints
 function buildTrailRibbon() {
   const trailWaypoints = [
     new THREE.Vector3(0, 0, 260),
@@ -484,7 +479,6 @@ function buildTrailRibbon() {
   scene.add(trailLine);
 }
 
-// Trees, Boulders & Edelweiss Flowers
 function buildFoliageAndRocks() {
   trees.forEach(t => scene.remove(t));
   boulders.forEach(b => scene.remove(b));
@@ -498,7 +492,6 @@ function buildFoliageAndRocks() {
   const rockMat = new THREE.MeshStandardMaterial({ color: 0x64748b, flatShading: true });
   const edelweissMat = new THREE.MeshStandardMaterial({ color: 0xfef08a });
 
-  // 1. Pine Trees
   for (let i = 0; i < 180; i++) {
     const x = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.7);
     const z = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.7);
@@ -522,7 +515,6 @@ function buildFoliageAndRocks() {
     }
   }
 
-  // 2. Boulders
   for (let i = 0; i < 70; i++) {
     const x = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.65);
     const z = (Math.random() - 0.5) * (TERRAIN_SIZE * 0.65);
@@ -537,7 +529,6 @@ function buildFoliageAndRocks() {
     }
   }
 
-  // 3. Edelweiss
   for (let i = 0; i < 60; i++) {
     const x = (Math.random() - 0.5) * 180;
     const z = -120 + (Math.random() - 0.5) * 120;
@@ -552,6 +543,7 @@ function buildFoliageAndRocks() {
   }
 }
 
+// Checkpoints
 function buildCheckpoints() {
   checkpoints.forEach(cp => {
     if (cp.mesh) scene.remove(cp.mesh);
@@ -614,67 +606,231 @@ function buildCheckpoints() {
   });
 }
 
-function buildNPCs() {
-  npcs.forEach(n => {
-    if (n.mesh) scene.remove(n.mesh);
-  });
-  npcs = [];
+// Rich Interactive Landmarks: Mata Air Pos 1, Warung Sabana Pos 3, Shelter Gazebos
+function buildMapLandmarks() {
+  interactables = [];
 
-  const npcData = [
-    {
-      name: '🎒 Porter Pak Yanto',
-      x: 20, z: 98,
-      dialogue: '"Monggo mas, istirahat dulu di Pos 2 ini. Nanti sebelum tanjakan sabana ada mata air jernih di sisi kiri jalur. Tetap jaga ritme nafas ya!"',
-      actionText: 'Terima Wedang Jahe (+30 Suhu & +20 Stamina)',
-      actionType: 'tea'
-    },
-    {
-      name: '🏕️ Mas Dimas (Pendaki Solo)',
-      x: -12, z: -22,
-      dialogue: '"Halo bro! Tempat camp Sabana ini aman dari terpaan angin badai. Besok dini hari jam 03.30 kita summit attack bareng yuk ke puncak!"',
-      actionText: 'Makan Biskuit Bersama (+35 Stamina)',
-      actionType: 'snack'
+  // 1. Sumber Mata Air Alami di Pos 1 (x: -18, z: 185)
+  const springY = getTerrainHeight(-18, 185);
+  const springGroup = new THREE.Group();
+
+  // Stone Basin (Kolam Batu Alami)
+  const basin = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.5, 1.3, 0.8, 8),
+    new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9 })
+  );
+  basin.position.y = 0.4;
+  springGroup.add(basin);
+
+  // Water Surface in Basin
+  const water = new THREE.Mesh(
+    new THREE.CircleGeometry(1.4, 8),
+    new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.1, metalness: 0.2 })
+  );
+  water.rotation.x = -Math.PI / 2;
+  water.position.y = 0.78;
+  springGroup.add(water);
+
+  // Bamboo Spout (Pancuran Bambu)
+  const bamboo = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.1, 2.2, 6),
+    new THREE.MeshStandardMaterial({ color: 0x65a30d })
+  );
+  bamboo.rotation.x = Math.PI / 3;
+  bamboo.position.set(0, 1.2, -0.6);
+  springGroup.add(bamboo);
+
+  springGroup.position.set(-18, springY, 185);
+  scene.add(springGroup);
+
+  interactables.push({
+    name: '💧 Sumber Mata Air Alami Pos 1',
+    type: 'water_spring',
+    x: -18, z: 185,
+    dialogue: 'Mata air jernih pegunungan mengalir segar dari sela bebatuan pinus. Airnya dingin dan kaya mineral alami.',
+    actionText: 'Isi Penuh Semua Botol Air (+100% Hidrasi)',
+    action: () => {
+      state.hydration = 100;
+      showNotification('💧 Semua botol air terisi penuh 100%! Tubuh segar bugar.');
     }
-  ];
-
-  npcData.forEach(data => {
-    const y = getTerrainHeight(data.x, data.z);
-    const npcGroup = new THREE.Group();
-
-    const body = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.35, 0.4, 1.4, 6),
-      new THREE.MeshStandardMaterial({ color: 0x2563eb })
-    );
-    body.position.y = 0.9;
-    npcGroup.add(body);
-
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.28, 6, 6),
-      new THREE.MeshStandardMaterial({ color: 0xffedd5 })
-    );
-    head.position.y = 1.8;
-    npcGroup.add(head);
-
-    const hat = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.45, 0.45, 0.1, 6),
-      new THREE.MeshStandardMaterial({ color: 0xd97706 })
-    );
-    hat.position.y = 2.05;
-    npcGroup.add(hat);
-
-    const pack = new THREE.Mesh(
-      new THREE.BoxGeometry(0.5, 0.9, 0.4),
-      new THREE.MeshStandardMaterial({ color: 0x1e293b })
-    );
-    pack.position.set(0, 1.1, -0.3);
-    npcGroup.add(pack);
-
-    npcGroup.position.set(data.x, y, data.z);
-    scene.add(npcGroup);
-
-    data.mesh = npcGroup;
-    npcs.push(data);
   });
+
+  // 2. Warung Ketinggian Sabana di Pos 3 (x: -15, z: -15)
+  const warungY = getTerrainHeight(-15, -15);
+  const warungGroup = new THREE.Group();
+
+  // Wooden Hut Body
+  const hut = new THREE.Mesh(
+    new THREE.BoxGeometry(4.2, 2.6, 3.5),
+    new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.9 })
+  );
+  hut.position.y = 1.3;
+  warungGroup.add(hut);
+
+  // Roof
+  const roof = new THREE.Mesh(
+    new THREE.ConeGeometry(3.6, 1.8, 4),
+    new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.8 })
+  );
+  roof.rotation.y = Math.PI / 4;
+  roof.position.y = 3.2;
+  warungGroup.add(roof);
+
+  // Warung Sign Banner
+  const sign = new THREE.Mesh(
+    new THREE.BoxGeometry(2.4, 0.6, 0.1),
+    new THREE.MeshStandardMaterial({ color: 0xf59e0b })
+  );
+  sign.position.set(0, 2.2, 1.8);
+  warungGroup.add(sign);
+
+  warungGroup.position.set(-15, warungY, -15);
+  scene.add(warungGroup);
+
+  interactables.push({
+    name: '☕ Warung Ketinggian Sabana (Mbok Yem)',
+    type: 'warung',
+    x: -15, z: -15,
+    dialogue: '"Sugeng rawuh mas! Monggo istirahat di warung tertinggi. Ada teh jahe panas, kopi tubruk, dan nasi pecel hangat."',
+    actionText: 'Santap Nasi Pecel & Teh Panas (+Full Stamina & Suhu)',
+    action: () => {
+      state.stamina = 100;
+      state.warmth = 100;
+      state.health = Math.min(100, state.health + 30);
+      showNotification('🍛 Nasi Pecel & Teh Jahe dinikmati! Tenaga dan suhu tubuh pulih 100%!');
+    }
+  });
+
+  // 3. NPC Porter Pak Yanto di Pos 2 (x: 20, z: 98)
+  const npcY = getTerrainHeight(20, 98);
+  const npcGroup = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.35, 0.4, 1.4, 6),
+    new THREE.MeshStandardMaterial({ color: 0x2563eb })
+  );
+  body.position.y = 0.9;
+  npcGroup.add(body);
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.28, 6, 6),
+    new THREE.MeshStandardMaterial({ color: 0xffedd5 })
+  );
+  head.position.y = 1.8;
+  npcGroup.add(head);
+
+  const hat = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.45, 0.45, 0.1, 6),
+    new THREE.MeshStandardMaterial({ color: 0xd97706 })
+  );
+  hat.position.y = 2.05;
+  npcGroup.add(hat);
+
+  npcGroup.position.set(20, npcY, 98);
+  scene.add(npcGroup);
+
+  interactables.push({
+    name: '🎒 Porter Pak Yanto',
+    type: 'npc',
+    x: 20, z: 98,
+    dialogue: '"Monggo mas, istirahat dulu di Pos 2 ini. Nanti sebelum tanjakan sabana ada mata air jernih di sisi kiri jalur. Tetap jaga ritme nafas ya!"',
+    actionText: 'Terima Wedang Jahe (+30 Suhu & +20 Stamina)',
+    action: () => {
+      state.warmth = Math.min(100, state.warmth + 30);
+      state.stamina = Math.min(100, state.stamina + 20);
+      showNotification('☕ Wedang jahe hangat diminum! Badan terasa segar bertenaga.');
+    }
+  });
+
+  // 4. Shelter Gazebo di Pos 2 (x: 14, z: 104)
+  const shelterY = getTerrainHeight(14, 104);
+  const shelterGroup = new THREE.Group();
+  for (let i = -1; i <= 1; i += 2) {
+    for (let j = -1; j <= 1; j += 2) {
+      const p = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.1, 0.1, 2.6, 6),
+        new THREE.MeshStandardMaterial({ color: 0x5c3d2e })
+      );
+      p.position.set(i * 1.5, 1.3, j * 1.5);
+      shelterGroup.add(p);
+    }
+  }
+  const sRoof = new THREE.Mesh(
+    new THREE.ConeGeometry(2.8, 1.4, 4),
+    new THREE.MeshStandardMaterial({ color: 0x2e1f18 })
+  );
+  sRoof.rotation.y = Math.PI / 4;
+  sRoof.position.y = 3.1;
+  shelterGroup.add(sRoof);
+  shelterGroup.position.set(14, shelterY, 104);
+  scene.add(shelterGroup);
+}
+
+// Wildlife (Javan Eagle circling summit) & Summit Sulfur Vapor
+function buildWildlife() {
+  // Javan Hawk-Eagle (Elang Jawa)
+  const eagleGroup = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.ConeGeometry(0.3, 1.2, 5),
+    new THREE.MeshStandardMaterial({ color: 0x451a03 })
+  );
+  body.rotation.x = Math.PI / 2;
+  eagleGroup.add(body);
+
+  const wings = new THREE.Mesh(
+    new THREE.BoxGeometry(3.2, 0.08, 0.6),
+    new THREE.MeshStandardMaterial({ color: 0x271911 })
+  );
+  wings.position.set(0, 0.1, 0);
+  eagleGroup.add(wings);
+
+  eagleGroup.position.set(0, 180, -180);
+  scene.add(eagleGroup);
+  eagleMesh = eagleGroup;
+
+  // Active Crater Sulfur Smoke Fumarole at Summit
+  const smokeCount = 80;
+  const smokeGeo = new THREE.BufferGeometry();
+  const smokePos = [];
+  for (let i = 0; i < smokeCount; i++) {
+    smokePos.push(
+      (Math.random() - 0.5) * 14,
+      Math.random() * 25,
+      (Math.random() - 0.5) * 14
+    );
+  }
+  smokeGeo.setAttribute('position', new THREE.Float32BufferAttribute(smokePos, 3));
+  const smokeMat = new THREE.PointsMaterial({
+    color: 0xfef08a,
+    size: 2.2,
+    transparent: true,
+    opacity: 0.35,
+    depthWrite: false
+  });
+  sulfurSmokeParticles = new THREE.Points(smokeGeo, smokeMat);
+  sulfurSmokeParticles.position.set(0, getTerrainHeight(0, -200) + 2, -200);
+  scene.add(sulfurSmokeParticles);
+}
+
+function updateWildlifeAndSmoke(delta) {
+  // Eagle circling animation
+  if (eagleMesh) {
+    const time = performance.now() * 0.0006;
+    const r = 110;
+    eagleMesh.position.x = Math.cos(time) * r;
+    eagleMesh.position.z = -190 + Math.sin(time) * r;
+    eagleMesh.rotation.y = -time;
+  }
+
+  // Rising sulfur smoke
+  if (sulfurSmokeParticles) {
+    const pos = sulfurSmokeParticles.geometry.attributes.position.array;
+    for (let i = 1; i < pos.length; i += 3) {
+      pos[i] += delta * 4.5;
+      if (pos[i] > 25) pos[i] = 0;
+    }
+    sulfurSmokeParticles.geometry.attributes.position.needsUpdate = true;
+  }
 }
 
 function buildRainSystem() {
@@ -740,7 +896,6 @@ function setupControls() {
     if (e.code in keys) keys[e.code] = false;
   });
 
-  // Binoculars (Right click)
   document.addEventListener('mousedown', (e) => {
     if (e.button === 2 && state.isGameActive && !state.isBackpackOpen) {
       e.preventDefault();
@@ -755,7 +910,6 @@ function setupControls() {
   });
   document.addEventListener('contextmenu', e => e.preventDefault());
 
-  // Mouse Look
   document.addEventListener('click', () => {
     if (state.isGameActive && !state.isBackpackOpen && !state.isPhotoMode && document.pointerLockElement !== document.body) {
       document.body.requestPointerLock();
@@ -1005,33 +1159,37 @@ function drawMinimap() {
   ctx.restore();
 }
 
-function updateNPCProximity() {
+function updateInteractionProximity() {
   const crosshair = document.getElementById('crosshair');
-  let foundNPC = null;
+  const hint = document.getElementById('interact-hint');
+  let found = null;
 
-  npcs.forEach(npc => {
-    const dist = Math.hypot(player.position.x - npc.x, player.position.z - npc.z);
-    if (dist < 8.0) {
-      foundNPC = npc;
+  interactables.forEach(item => {
+    const dist = Math.hypot(player.position.x - item.x, player.position.z - item.z);
+    if (dist < 9.0) {
+      found = item;
     }
   });
 
-  state.activeNPC = foundNPC;
-  if (crosshair) {
-    if (foundNPC) {
+  state.activeInteractable = found;
+  if (crosshair && hint) {
+    if (found) {
       crosshair.classList.add('interactable');
+      hint.textContent = `[E] ${found.name}`;
+      hint.style.display = 'block';
     } else {
       crosshair.classList.remove('interactable');
+      hint.style.display = 'none';
     }
   }
 }
 
 function triggerInteraction() {
-  if (state.activeNPC) {
+  if (state.activeInteractable) {
     document.exitPointerLock();
-    document.getElementById('dialog-speaker').textContent = state.activeNPC.name;
-    document.getElementById('dialog-text').textContent = state.activeNPC.dialogue;
-    document.getElementById('dialog-btn-action').textContent = state.activeNPC.actionText;
+    document.getElementById('dialog-speaker').textContent = state.activeInteractable.name;
+    document.getElementById('dialog-text').textContent = state.activeInteractable.dialogue;
+    document.getElementById('dialog-btn-action').textContent = state.activeInteractable.actionText;
     document.getElementById('dialog-popup').style.display = 'block';
   } else {
     const summitCP = checkpoints.find(c => c.isSummit);
@@ -1043,15 +1201,8 @@ function triggerInteraction() {
 }
 
 function handleDialogAction() {
-  if (state.activeNPC) {
-    if (state.activeNPC.actionType === 'tea') {
-      state.warmth = Math.min(100, state.warmth + 30);
-      state.stamina = Math.min(100, state.stamina + 20);
-      showNotification('☕ Wedang jahe hangat diminum! Badan terasa segar bertenaga.');
-    } else if (state.activeNPC.actionType === 'snack') {
-      state.stamina = Math.min(100, state.stamina + 35);
-      showNotification('🍫 Menikmati biskuit & bertukar cerita pendakian.');
-    }
+  if (state.activeInteractable && state.activeInteractable.action) {
+    state.activeInteractable.action();
   }
   closeDialog();
 }
@@ -1343,7 +1494,8 @@ function setupUIEvents() {
       buildTerrain();
       buildFoliageAndRocks();
       buildCheckpoints();
-      buildNPCs();
+      buildMapLandmarks();
+      buildWildlife();
 
       const initialY = getTerrainHeight(0, 260) + player.height;
       player.position.set(0, initialY, 260);

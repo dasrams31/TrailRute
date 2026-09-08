@@ -45,10 +45,26 @@
       transition: all 0.15s ease;
     }
     #crosshair.interactable {
-      width: 14px;
-      height: 14px;
+      width: 16px;
+      height: 16px;
       background: #38bdf8;
-      box-shadow: 0 0 12px #38bdf8;
+      box-shadow: 0 0 14px #38bdf8;
+    }
+    #interact-hint {
+      position: absolute;
+      top: 54%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid #38bdf8;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #38bdf8;
+      display: none;
+      pointer-events: none;
+      z-index: 10;
     }
 
     /* Binocular Zoom Vignette Overlay */
@@ -464,6 +480,7 @@
 
   <div id="canvas-container"></div>
   <div id="crosshair"></div>
+  <div id="interact-hint">[E] Interaksi</div>
   <div id="binocular-overlay"></div>
 
   <!-- Top Left Mountain HUD -->
@@ -533,12 +550,12 @@
     </button>
   </div>
 
-  <!-- Dialogue Popup (NPC / Object Interaction) -->
+  <!-- Dialogue Popup (NPC / Landmark) -->
   <div id="dialog-popup">
     <div class="dialog-speaker" id="dialog-speaker">🎒 Porter Pak Yanto</div>
-    <div class="dialog-text" id="dialog-text">"Monggo mas, istirahat dulu di pos ini. Nanti sebelum tanjakan sabana ada mata air jernih di sisi kiri jalur. Tetap hati-hati ya!"</div>
+    <div class="dialog-text" id="dialog-text">"Monggo mas, istirahat dulu di Pos ini."</div>
     <div class="dialog-btns">
-      <button class="item-btn" id="dialog-btn-action" onclick="handleDialogAction()">Terima Wedang Jahe (+30 Suhu)</button>
+      <button class="item-btn" id="dialog-btn-action" onclick="handleDialogAction()">Terima</button>
       <button class="item-btn" style="background:#475569;" onclick="closeDialog()">Tutup</button>
     </div>
   </div>
@@ -600,7 +617,7 @@
   <!-- Start Menu Overlay -->
   <div id="overlay-screen">
     <h1 class="hero-title">TRAILRUTE 3D</h1>
-    <p class="hero-subtitle">Ekspedisi Pendakian Gunung Jawa dalam Grafis 3D Interaktif. Menghadirkan NPC interaktif, efek cuaca hujan badai, mode foto, radar GPS topografi, dan panorama alam!</p>
+    <p class="hero-subtitle">Ekspedisi Pendakian Gunung Jawa dalam Grafis 3D Interaktif. Jelajahi sumber mata air, shelter pos kayu, warung kopi sabana, elang jawa, dan panorama puncak!</p>
     
     <div class="mountain-picker">
       <div class="mtn-card active" onclick="selectMountain('prau', this)">
@@ -625,7 +642,7 @@
     <div class="controls-help">
       🎮 <b>Kontrol Navigasi & Aksi:</b><br/>
       [W, A, S, D] Berjalan • [Shift] Sprint • [Spasi] Melompat • [Klik Kanan] Teropong Binokular<br/>
-      [E] Interaksi NPC / Tugu • [P] Mode Foto • [T] Ganti Cuaca • [F] Headlamp • [C] Pasang Tenda • [TAB] Ransel
+      [E] Interaksi Mata Air / Warung / NPC • [P] Mode Foto • [T] Ganti Cuaca • [F] Headlamp • [C] Pasang Tenda
     </div>
   </div>
 
